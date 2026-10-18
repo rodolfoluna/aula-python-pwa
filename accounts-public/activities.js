@@ -2,12 +2,14 @@ import { normalizeActivity, validateAnswer, newActivity, clone } from '../dist/a
 import { renderMarkdown } from '../dist/markdown.js';
 import { createWorksheet } from './worksheet.js';
 import { DraftSync } from './draft-sync.js';
+import { PollBudget } from './sync-policy.js';
 const $ = selector => document.querySelector(selector);
 const date = value => value ? new Date(value).toLocaleString('es-MX') : 'Sin fecha límite';
 const reviewedCurrent = sub => sub?.reviewed_at && sub?.submitted_at && Date.parse(sub.reviewed_at) >= Date.parse(sub.submitted_at);
 const answerStatus = sub => !sub ? 'Sin iniciar' : sub.submitted_at ? (reviewedCurrent(sub) ? 'Revisada' : 'Entregada') : sub.returned_at ? 'Devuelta para correcciones' : 'En progreso';
 const gradeText = sub => sub?.grade == null ? 'Sin calificación' : `${Number(sub.grade)}/100${reviewedCurrent(sub) ? '' : ' · Nota de la revisión anterior (provisional)'}`;
 export function setupActivities({ api, perform, getGroups, getProfile, getRunnerOrigin }) {
+  const progressBudget = new PollBudget(), progressTokens = new Map(), progressFlights = new Map();
   let sessionKey, profile, view = 'roster', catalog = { activities: [], assignments: [] }, draft, draftDirty = false, reviewDirty = false, worksheet, sync, opened, progressId, reviewedStudent, ticker, frame, runnerReady, runnerBusy, queued, runnerTimer, cacheKey, epoch = 0;
   const notice = (text, error = false) => { $('#activities-notice').textContent = text; $('#activities-notice').hidden = !text; $('#activities-notice').className = error ? 'error' : ''; };
   const element = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
@@ -67,13 +69,13 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     $('#work-readonly').hidden = data.writable;
     let answer = data.answer;
     if (own) {
-      sync = new DraftSync({ key: `aula-answer:${profile.id}:${assignmentId}`, answer, revision: data.revision, storage: data.writable ? localStorage : undefined, validate: value => validateAnswer(template, value),
-        save: async payload => (await api('answer-save', { assignmentId, ...payload })).submission,
+      sync = new DraftSync({ key: `aula-answer:${profile.id}:${assignmentId}`, answer, revision: data.revision, delta: true, lastSaveId: data.submission?.last_save_id, storage: data.writable ? localStorage : undefined, validate: value => validateAnswer(template, value),
+        save: async (payload, options) => (await api('answer-save', { assignmentId, ...payload }, options)).submission,
         status: (text, kind) => { if (currentEpoch === epoch) { $('#answer-state').textContent = text; $('#answer-state').className = kind; } },
       });
       answer = sync.answer;
       if (!data.writable) $('#answer-state').textContent = data.submission?.submitted_at ? 'Entregada · ' + date(data.submission.submitted_at) : 'Actividad cerrada o vencida';
-      ticker = setInterval(() => { if (!document.hidden && sync?.dirty && !sync.conflict && !sync.blocked) sync.flush().then(syncControls).catch(syncControls); }, 30000);
+      ticker = setInterval(() => { if (!document.hidden) autoSave(); }, 60000);
       ticker.unref?.();
     }
     worksheet = createWorksheet($('#worksheet'), { activity: template, answer, role: own ? 'student' : 'review', readonly: !data.writable,
@@ -123,7 +125,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   async function refresh() {
     const actorId = profile?.id, data = await api('activities'); if (!profile || profile.id !== actorId) return; catalog = data; $('#assignments-list').replaceChildren(); $('#activity-drafts').replaceChildren();
     if (profile.role === 'teacher') {
-      for (const activity of catalog.activities || []) { const card = element('article', undefined, 'card'); card.append(element('h3', activity.title), element('p', `${activity.kind === 'notebook' ? 'Notebook' : 'Ejercicios con archivos'} · v${activity.version}`, 'muted'), button('Editar plantilla', () => showDraft(activity))); $('#activity-drafts').append(card); }
+      for (const activity of catalog.activities || []) { const card = element('article', undefined, 'card'); card.append(element('h3', activity.title), element('p', `${activity.kind === 'notebook' ? 'Notebook' : 'Ejercicios con archivos'} · v${activity.version}`, 'muted'), button('Editar plantilla', async () => showDraft((await api('activity-template', { activityId: activity.id })).activity))); $('#activity-drafts').append(card); }
       renderAssignmentForm();
     }
     for (const assignment of catalog.assignments || []) {
@@ -137,12 +139,31 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     if (!(catalog.assignments || []).length) $('#assignments-list').append(element('p', 'Todavía no hay actividades asignadas.', 'muted'));
     syncControls();
   }
-  async function showProgress(id) {
-    progressId = id; const actorId = profile?.id, data = await api('activity-progress', { assignmentId: id }); if (!profile || profile.id !== actorId || progressId !== id) return; $('#activity-progress').hidden = false; $('#progress-list').replaceChildren();
+  async function showProgress(id, automatic = false) {
+    if (progressId !== id) progressBudget.reset();
+    progressId = id;
+    if (progressFlights.has(id)) return progressFlights.get(id);
+    const request = (async () => {
+    const actorId = profile?.id;
+    let data;
+    try { data = await api('activity-progress', { assignmentId: id, ...(automatic && progressTokens.has(id) ? { token: progressTokens.get(id) } : {}) }); }
+    catch (error) { if (progressId === id) { progressBudget.completed(false, true); $('#progress-state').textContent = 'No se pudo actualizar. Se conserva el resumen anterior; puedes pulsar Actualizar avances.'; } throw error; }
+    if (!profile || profile.id !== actorId || progressId !== id) return;
+    progressBudget.completed(data.unchanged); if (data.token) progressTokens.set(id, data.token);
+    $('#progress-state').textContent = `Última comprobación: ${new Date().toLocaleTimeString('es-MX')}. Actualización automática cada ${progressBudget.delay / 1000} s según cambios; también puedes actualizar ahora.`;
+    $('#activity-progress').hidden = false; if (data.unchanged) return; $('#progress-list').replaceChildren();
     for (const student of data.students) { const row = element('div', undefined, 'progress-row'); row.append(element('strong', `${student.control} · ${student.name}`), element('span', `${answerStatus(student.submission)}${student.submission ? ' · ' + date(student.submission.submitted_at || student.submission.updated_at) : ''}${student.submission?.reviewed_at ? ' · ' + gradeText(student.submission) : ''}`), button('Ver último avance', () => openAnswer(id, student.id))); $('#progress-list').append(row); }
     if (!data.students.length) $('#progress-list').append(element('p', 'Este grupo todavía no tiene alumnos.'));
+    })();
+    progressFlights.set(id, request);
+    try { return await request; } finally { if (progressFlights.get(id) === request) progressFlights.delete(id); }
   }
-  const progressTimer = setInterval(() => { if (profile?.role === 'teacher' && progressId && !$('#activities-hub').hidden && !document.hidden) showProgress(progressId).catch(() => {}); }, 30000);
+  const online = () => window.navigator?.onLine !== false;
+  function autoSave(keepalive = false) { if (online() && sync?.dirty && !sync.conflict && !sync.blocked && !sync.inFlight && Date.now() >= sync.nextRetryAt) sync.flush(false, { keepalive }).then(syncControls).catch(syncControls); }
+  const progressTimer = setInterval(() => { if (profile?.role === 'teacher' && progressId && !$('#activities-hub').hidden && !document.hidden && online() && progressBudget.due()) showProgress(progressId, true).catch(() => {}); }, 15000);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) autoSave(true); else { autoSave(); if (progressId && progressBudget.due() && online() && profile?.role === 'teacher' && !$('#activities-hub').hidden) showProgress(progressId, true).catch(() => {}); } });
+  window.addEventListener('online', () => autoSave());
+  window.addEventListener('pagehide', () => autoSave(true));
   progressTimer.unref?.();
   $('#roster-nav').onclick = () => { if (!canLeave()) return; view = 'roster'; $('#teacher-panel').hidden = false; $('#activities-hub').hidden = true; };
   $('#activities-nav').onclick = () => perform(async () => { view = 'activities'; $('#teacher-panel').hidden = true; $('#activities-hub').hidden = false; await refresh(); });
@@ -189,7 +210,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     syncControls,
     async setSession(value) {
       const nextKey = value ? value.id + ':' + value.must_change_password : '';
-      if (nextKey !== sessionKey) { teardown(); progressId = null; $('#progress-list').replaceChildren(); $('#activity-progress').hidden = true; $('#activity-drafts').replaceChildren(); $('#assignments-list').replaceChildren(); sessionKey = nextKey; }
+      if (nextKey !== sessionKey) { teardown(); progressId = null; progressTokens.clear(); progressBudget.reset(); $('#progress-list').replaceChildren(); $('#activity-progress').hidden = true; $('#activity-drafts').replaceChildren(); $('#assignments-list').replaceChildren(); sessionKey = nextKey; }
       profile = value; $('#activity-teacher-tools').hidden = profile?.role !== 'teacher';
       if (profile?.role === 'teacher') $('#teacher-panel').hidden = profile.must_change_password || view === 'activities';
       $('#activities-hub').hidden = !profile || profile.must_change_password || (profile.role === 'teacher' && view === 'roster');

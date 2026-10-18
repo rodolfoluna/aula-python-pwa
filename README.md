@@ -10,6 +10,8 @@ Para **crear actividades, asignarlas a grupos y contestarlas con las cuentas rea
 
 Para publicar la app y permitir acceso desde otros equipos, consultar [PUBLICAR_RENDER.md](PUBLICAR_RENDER.md). Incluye un Blueprint para un servidor gratuito y una consola estática separada; Supabase conserva los datos existentes.
 
+El guardado eficiente requiere la migración `202610170005_efficient_sync.sql`: autoguardado cada 60 segundos si hay cambios, envío de diferencias después del primer guardado, reintentos con el mismo identificador y seguimiento del profesor con frecuencia adaptable. Consultar [ACTIVIDADES_SETUP.md](ACTIVIDADES_SETUP.md) para los detalles de recuperación y actualización.
+
 Requiere Node.js 20 o posterior.
 
 ```powershell

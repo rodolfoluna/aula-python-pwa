@@ -4,8 +4,12 @@ const $ = selector => document.querySelector(selector);
 let profile, roster = { students: [], groups: [], memberships: [] }, preview = [], credentials = [], busy = false, configured = false;
 let activities, runnerOrigin = 'http://127.0.0.1:4173';
 function message(text, error = false) { $('#message').textContent = text; $('#message').classList.toggle('error', error); $('#message').hidden = !text; }
-async function api(path, data) {
-  const response = await fetch('/api/' + path, { method: data === undefined ? 'GET' : 'POST', headers: data === undefined ? {} : { 'Content-Type': 'application/json' }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) });
+async function api(path, data, options = {}) {
+  const body = data === undefined ? undefined : JSON.stringify(data), controller = path === 'answer-save' ? new AbortController() : null;
+  const timeout = controller && setTimeout(() => controller.abort(), 90000); timeout?.unref?.();
+  let response;
+  try { response = await fetch('/api/' + path, { method: data === undefined ? 'GET' : 'POST', headers: data === undefined ? {} : { 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body }), ...(controller ? { signal: controller.signal } : {}), ...(options.keepalive && body && new TextEncoder().encode(body).length < 60000 ? { keepalive: true } : {}) }); }
+  finally { clearTimeout(timeout); }
   const result = await response.json();
   if (!response.ok) {
     if (response.status === 401 && !['login', 'password'].includes(path)) { profile = null; credentials = []; $('#credentials-table').replaceChildren(); $('#credentials-dialog').close(); await renderSession(); }

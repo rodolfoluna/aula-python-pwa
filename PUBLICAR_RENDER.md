@@ -36,7 +36,7 @@ Las sesiones del aula duran hasta ocho horas y están en memoria del servidor: u
 
 El plan gratuito tiene cuotas de transferencia y compilación. Sin método de pago, Render puede suspender el servicio al agotar las cuotas; si se añade una tarjeta, revisar los cargos por excesos. No se garantiza capacidad ni disponibilidad de producción. Revisar el consumo real durante una clase de 40 alumnos antes de depender del servicio para evaluaciones.
 
-Supabase mantiene sus cuotas y condiciones gratuitas por separado. Los cambios de código se guardan cada 30 segundos solo si hubo modificaciones; las revisiones históricas se crean al revisar una entrega, no con cada autoguardado. Los paquetes grandes de Python se descargan desde el CDN de Pyodide, sin pasar por el servidor de cuentas.
+Supabase mantiene sus cuotas y condiciones gratuitas por separado. Los cambios de código se guardan cada 60 segundos solo si hubo modificaciones; tras el primer guardado se envían diferencias. El seguimiento del profesor ajusta su intervalo de 30 a 120 segundos según cambios y se pausa si la vista está oculta. Las revisiones históricas se crean al revisar una entrega, no con cada autoguardado. Los paquetes grandes de Python se descargan desde el CDN de Pyodide, sin pasar por el servidor de cuentas. El protocolo eficiente requiere la migración SQL 005.
 
 ## Actualizaciones
 

@@ -1,12 +1,20 @@
 import { AccountError } from './service.mjs';
 import { normalizeActivity, validateAnswer, initialAnswer } from '../dist/activity-model.js';
+import { applyAnswerPatch, sameAnswer } from '../dist/answer-patch.js';
+import { BoundedCache } from './bounded-cache.mjs';
 export function createActivitiesService(store, clock = () => Date.now()) {
+  const templates = new BoundedCache({ bytes: 4194304, clock }), answers = new BoundedCache({ bytes: 33554432, clock });
   const denied = () => new AccountError(404, 'Actividad no encontrada o sin acceso.');
   async function owned(profile, id) { const activity = await store.activity(id); if (!activity || activity.teacher_id !== profile.id || profile.role !== 'teacher') throw denied(); return activity; }
-  async function assigned(profile, id) {
-    const assignment = await store.assignment(id); if (!assignment) throw denied();
+  async function assigned(profile, id, withSnapshot = true) {
+    const assignment = await store.assignmentMeta(id); if (!assignment) throw denied();
     if (profile.role === 'teacher') { if (assignment.teacher_id !== profile.id) throw denied(); }
     else if (!await store.isMember(assignment.group_id, profile.id)) throw denied();
+    if (withSnapshot) {
+      let snapshot = templates.get(id);
+      if (!snapshot) { snapshot = (await store.assignment(id))?.snapshot; if (!snapshot) throw denied(); templates.set(id, snapshot); }
+      assignment.snapshot = snapshot;
+    }
     return assignment;
   }
   const writable = (assignment, submission) => {
@@ -14,6 +22,7 @@ export function createActivitiesService(store, clock = () => Date.now()) {
     return !submission?.submitted_at && !assignment.closed && (!deadline || Date.parse(deadline) > clock());
   };
   return {
+    async template(profile, id) { return owned(profile, id); },
     async list(profile) {
       if (profile.role === 'teacher') return { activities: await store.listActivities(profile.id), assignments: await store.listAssignments(profile.id) };
       return { assignments: await store.studentAssignments(profile.id) };
@@ -45,27 +54,42 @@ export function createActivitiesService(store, clock = () => Date.now()) {
       const student = await store.profile(target);
       if (!student || student.role !== 'student' || student.teacher_id !== assignment.teacher_id) throw denied();
       const submission = await store.submission(id, target);
+      if (submission) answers.set(id + ':' + target, { revision: submission.revision, answer: submission.answer });
       const reviews = await store.reviewSummaries(id, target);
-      return { assignment, student: { id: student.id, control: student.control, name: student.name }, submission, reviews, answer: submission?.answer || initialAnswer(assignment.snapshot), revision: submission?.revision || 0, writable: profile.role === 'student' && writable(assignment, submission) };
+      const { answer: ignored, last_save_hash, ...summary } = submission || {};
+      return { assignment, student: { id: student.id, control: student.control, name: student.name }, submission: submission ? summary : null, reviews, answer: submission?.answer || initialAnswer(assignment.snapshot), revision: submission?.revision || 0, writable: profile.role === 'student' && writable(assignment, submission) };
     },
     async saveAnswer(profile, data) {
       if (profile.role !== 'student') throw new AccountError(403, 'Solo el alumno puede guardar su respuesta.');
       const assignment = await assigned(profile, data.assignmentId);
       if (!Number.isInteger(data.revision) || data.revision < 0 || typeof data.submit !== 'boolean') throw new AccountError(400, 'Revisión de respuesta inválida.');
-      if (!writable(assignment, await store.submission(assignment.id, profile.id))) throw new AccountError(403, 'La respuesta ya fue entregada o la actividad está cerrada.');
-      let answer; try { answer = validateAnswer(assignment.snapshot, data.answer); } catch (error) { throw new AccountError(400, error.message); }
-      return store.saveAnswer(assignment.id, profile.id, data.revision, answer, data.submit);
+      const current = await store.submissionState(assignment.id, profile.id), key = assignment.id + ':' + profile.id;
+      const delta = Object.hasOwn(data, 'patch');
+      if (delta && (typeof data.requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.requestId))) throw new AccountError(400, 'Identificador de guardado inválido.');
+      if (delta && current?.last_save_id === data.requestId) return store.saveDelta(assignment.id, profile.id, data.revision, data.patch, data.requestId, data.submit);
+      if (!writable(assignment, current)) throw new AccountError(403, 'La respuesta ya fue entregada o la actividad está cerrada.');
+      if ((current?.revision || 0) !== data.revision) throw new AccountError(409, 'Conflicto de revisión: hay cambios en otra sesión. Recarga antes de guardar.');
+      let answer;
+      try {
+        if (delta) {
+          let cached = answers.get(key);
+          if (cached?.revision !== data.revision) cached = current ? await store.submission(assignment.id, profile.id) : { answer: initialAnswer(assignment.snapshot) };
+          const reconstructed = applyAnswerPatch(cached.answer, data.patch);
+          answer = validateAnswer(assignment.snapshot, reconstructed);
+          if (!sameAnswer(answer, reconstructed)) throw new Error('Los cambios contienen campos no permitidos.');
+        } else answer = validateAnswer(assignment.snapshot, data.answer);
+      } catch (error) { throw new AccountError(400, error.message); }
+      const receipt = delta ? await store.saveDelta(assignment.id, profile.id, data.revision, data.patch, data.requestId, data.submit) : await store.saveAnswer(assignment.id, profile.id, data.revision, answer, data.submit);
+      answers.set(key, { revision: receipt.revision, answer }); return receipt;
     },
-    async progress(profile, id) {
+    async progress(profile, id, token) {
       if (profile.role !== 'teacher') throw new AccountError(403, 'Solo el profesor puede consultar avances.');
-      const assignment = await assigned(profile, id);
-      const [students, memberships, submissions] = await Promise.all([store.listStudents(profile.id), store.listMemberships(profile.id), store.submissionSummaries(id)]);
-      const ids = new Set([...memberships.filter(item => item.group_id === assignment.group_id).map(item => item.student_id), ...submissions.map(item => item.student_id)]);
-      return { assignment, students: students.filter(student => ids.has(student.id)).map(student => ({ ...student, submission: submissions.find(item => item.student_id === student.id) || null })) };
+      if (token !== undefined && (typeof token !== 'string' || token.length > 128)) throw new AccountError(400, 'Marcador de avances inválido.');
+      return store.progressSummary(id, profile.id, token || null);
     },
     async review(profile, data) {
       if (profile.role !== 'teacher') throw new AccountError(403, 'Solo el profesor puede revisar entregas.');
-      const assignment = await assigned(profile, data.assignmentId);
+      const assignment = await assigned(profile, data.assignmentId, false);
       const student = await store.profile(data.studentId);
       if (!student || student.role !== 'student' || student.teacher_id !== profile.id) throw denied();
       if (!['review', 'return'].includes(data.action) || !Number.isInteger(data.revision) || data.revision < 1 ||

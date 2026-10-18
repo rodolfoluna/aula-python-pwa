@@ -14,6 +14,8 @@ Para calificar, comentar y devolver entregas, ejecutar después, una sola vez:
 
 Agrega las calificaciones y el historial sin borrar respuestas anteriores. En una instalación que ya tiene actividades, ejecutar solo esta nueva migración 004.
 
+Para el guardado eficiente, aplicar después `supabase/migrations/202610170005_efficient_sync.sql`, una sola vez. Si ya usas calificaciones, solo hace falta esta nueva migración 005. Permite enviar diferencias, reintentar un guardado sin duplicarlo y consultar un resumen compacto de avances. Los clientes anteriores pueden seguir guardando respuestas completas durante la actualización.
+
 Después, desde esta carpeta:
 
 ```powershell
@@ -71,7 +73,7 @@ Los alumnos que se incorporen después al grupo también ven sus asignaciones. Q
 1. Entrar con número de control y contraseña. Si todavía es temporal, completar primero el cambio obligatorio.
 2. En **Mis actividades**, abrir una asignación de sus grupos.
 3. Editar las celdas o archivos permitidos y ejecutar para probar. Los ejemplos bloqueados se pueden ejecutar.
-4. El código se conserva localmente tras cada cambio y se sincroniza cada **30 segundos** si hay modificaciones y la página está visible. **Guardar ahora** fuerza la sincronización.
+4. El código se conserva localmente tras cada cambio y se sincroniza cada **60 segundos** si hay modificaciones, conexión y la página está visible. **Guardar ahora** fuerza la sincronización. Se intenta guardar también al ocultar la pestaña y al recuperar conexión; al cerrar el navegador ese último envío es de mejor esfuerzo y la copia local sigue siendo la protección principal.
 5. El estado muestra si los cambios están pendientes, guardados o en conflicto. Si hay un corte de conexión, se conserva la copia local y se reintenta posteriormente.
 6. **Entregar actividad** guarda la respuesta completa y la confirma en el servidor. Después queda en solo lectura. Una actividad cerrada o con plazo vencido tampoco admite nuevas escrituras.
 
@@ -81,7 +83,17 @@ Se bloquean copiar, cortar, pegar y arrastrar texto en la interfaz autenticada d
 
 ## Profesor: revisar avances
 
-En cada asignación, pulsar **Ver avances**. Se muestra el estado de cada alumno y la última sincronización; el resumen se actualiza cada 30 segundos mientras la vista esté abierta. **Ver último avance** abre el código guardado, incluso antes de la entrega, en una vista de solo lectura que también permite ejecutarlo para comprobarlo. Volver a pulsarlo obtiene la versión más reciente; el editor de revisión no sustituye su contenido automáticamente mientras lo estás leyendo.
+En cada asignación, pulsar **Ver avances**. Se muestra el estado de cada alumno y la última sincronización; el resumen consulta inicialmente cada 30 segundos y reduce su frecuencia hasta 120 segundos si no hay cambios. Se pausa cuando la vista está oculta o el navegador está sin conexión; tras fallos aumenta la espera hasta cinco minutos. **Actualizar avances** consulta de inmediato. **Ver último avance** abre el código guardado, incluso antes de la entrega, en una vista de solo lectura que también permite ejecutarlo para comprobarlo. Volver a pulsarlo obtiene la versión más reciente; el editor de revisión no sustituye su contenido automáticamente mientras lo estás leyendo.
+
+## Ahorro de consultas y transferencia
+
+- Los listados cargan títulos y versiones; el contenido de una plantilla se descarga al abrirla.
+- El primer guardado envía la respuesta completa. Los siguientes envían solo los campos cambiados (por ejemplo, una celda o un archivo); reordenar o agregar celdas puede requerir enviar su estructura completa.
+- La respuesta completa sigue almacenada en Supabase. No hace falta reconstruir una larga cadena de diferencias para revisar avances ni para recuperar el trabajo.
+- El servidor valida la respuesta completa reconstruida y mantiene una caché acotada de plantillas inmutables y respuestas confirmadas. Revisa cada vez el acceso, estado de la cuenta, grupo, plazo y revisión vigente; no usa esa caché para saltarse permisos. Un reinicio solo provoca nuevas lecturas, no elimina las respuestas guardadas.
+- El seguimiento consulta un resumen en una función SQL, sin descargar código ni plantillas. Si nada cambió, devuelve únicamente un marcador y no repite la lista de alumnos.
+- Si hubo cambios que después se revirtieron, no se guarda otra vez. Si se pierde el acuse de un guardado, se conserva su identificador en la copia local para repetir la misma operación sin incrementar de nuevo la revisión. Los fallos de red retrasan los reintentos automáticos; Guardar ahora permite intentarlo antes.
+- Las pestañas con una versión anterior y los conflictos entre dispositivos siguen sin sobrescribir respuestas nuevas. No se garantiza que un navegador sin espacio o cuyos datos locales se borraron conserve trabajo sin sincronizar; el estado avisa si falla la copia local.
 
 Las salidas de consola, gráficas y objetos Python no se guardan en Supabase: se guarda el código. Para volver a ver resultados es necesario ejecutar. **Cerrar actividad** impide futuras escrituras, incluidas las correcciones. Reabrir una actividad no amplía una fecha límite que ya venció. Las entregas continúan bloqueadas hasta que se devuelven individualmente.
 

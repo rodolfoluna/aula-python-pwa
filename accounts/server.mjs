@@ -10,6 +10,7 @@ import { hostingConfig } from './hosting.mjs';
 const publicRoot = new URL('../accounts-public/', import.meta.url);
 const hash = value => createHash('sha256').update(value).digest('hex');
 const SESSION_MS = 8 * 60 * 60 * 1000;
+const extraModules = new Map([['/dist/answer-patch.js', ['../dist/answer-patch.js', 'text/javascript']], ['/sync-policy.js', ['sync-policy.js', 'text/javascript']]]);
 const staticFiles = new Map([['/', ['index.html', 'text/html']], ['/app.js', ['app.js', 'text/javascript']], ['/styles.css', ['styles.css', 'text/css']], ['/csv.js', ['csv.js', 'text/javascript']], ['/activities.js', ['activities.js', 'text/javascript']], ['/worksheet.js', ['worksheet.js', 'text/javascript']], ['/draft-sync.js', ['draft-sync.js', 'text/javascript']], ['/activities.css', ['activities.css', 'text/css']], ...['activity-model.js', 'notebook.js', 'markdown.js', 'vendor/marked.js'].map(name => ['/dist/' + name, ['../dist/' + name, 'text/javascript']])]);
 
 export function createAccountsServer({ store, configError, secure = false, origin, runnerOrigin = 'http://127.0.0.1:4173' } = {}) {
@@ -39,7 +40,7 @@ export function createAccountsServer({ store, configError, secure = false, origi
       const path = new URL(req.url, 'http://local').pathname;
       if (path === '/healthz' && req.method === 'GET') { json(res, store ? 200 : 503, { ok: !!store }); return; }
       if (!path.startsWith('/api/')) {
-        const file = staticFiles.get(path);
+        const file = staticFiles.get(path) || extraModules.get(path);
         if (!file || req.method !== 'GET') { res.writeHead(404).end(); return; }
         res.setHeader('Content-Type', file[1] + '; charset=utf-8'); res.end(await readFile(new URL(file[0], publicRoot))); return;
       }
@@ -86,9 +87,10 @@ export function createAccountsServer({ store, configError, secure = false, origi
       if (path === '/api/answer-save' && req.method === 'POST') { const data = await body(req); const { answer, ...receipt } = await activities.saveAnswer(profile, data); json(res, 200, { submission: receipt }); return; }
       if (path === '/api/my-groups' && req.method === 'GET') { json(res, 200, { groups: await store.studentGroups(profile.id) }); return; }
       if (profile.role !== 'teacher') throw new AccountError(403, 'Esta operación requiere una cuenta de profesor.');
+      if (path === '/api/activity-template' && req.method === 'POST') { const data = await body(req); json(res, 200, { activity: await activities.template(profile, data.activityId) }); return; }
       if (path === '/api/activity-save' && req.method === 'POST') { json(res, 200, { activity: await activities.saveActivity(profile, await body(req)) }); return; }
       if (path === '/api/assign-activity' && req.method === 'POST') { json(res, 201, { assignments: await activities.assign(profile, await body(req)) }); return; }
-      if (path === '/api/activity-progress' && req.method === 'POST') { const data = await body(req); json(res, 200, await activities.progress(profile, data.assignmentId)); return; }
+      if (path === '/api/activity-progress' && req.method === 'POST') { const data = await body(req); json(res, 200, await activities.progress(profile, data.assignmentId, data.token)); return; }
       if (path === '/api/answer-review' && req.method === 'POST') { json(res, 200, { review: await activities.review(profile, await body(req)) }); return; }
       if (path === '/api/assignment-state' && req.method === 'POST') { json(res, 200, { assignment: await activities.close(profile, await body(req)) }); return; }
       if (path === '/api/roster' && req.method === 'GET') {

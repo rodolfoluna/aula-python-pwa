@@ -12,7 +12,7 @@ test('PostgreSQL: asignaciones, RLS, revisión atómica, plazos y entrega final'
       create table auth.users(id uuid primary key, raw_app_meta_data jsonb, raw_user_meta_data jsonb);
       create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
       grant usage on schema auth, public to authenticated, service_role; grant execute on function auth.uid() to authenticated;`);
-    for (const file of ['202610170001_accounts.sql', '202610170003_activities.sql', '202610170004_reviews.sql']) await db.exec(await readFile(new URL('../supabase/migrations/' + file, import.meta.url), 'utf8'));
+    for (const file of ['202610170001_accounts.sql', '202610170003_activities.sql', '202610170004_reviews.sql', '202610170005_efficient_sync.sql']) await db.exec(await readFile(new URL('../supabase/migrations/' + file, import.meta.url), 'utf8'));
     for (const [id, metadata] of [[teacher, { aula_role: 'teacher', aula_name: 'Docente' }], [student, { aula_role: 'student', aula_name: 'Ana', aula_control: '001', aula_teacher_id: teacher }], [stranger, { aula_role: 'student', aula_name: 'Luis', aula_control: '002', aula_teacher_id: teacher }]]) await db.query('insert into auth.users(id,raw_app_meta_data) values($1,$2)', [id, JSON.stringify(metadata)]);
     await db.exec("update aula_profiles set must_change_password = false");
     const groupId = (await db.query("insert into aula_groups(teacher_id,name) values($1,'Grupo A') returning id", [teacher])).rows[0].id;
@@ -60,5 +60,28 @@ test('PostgreSQL: asignaciones, RLS, revisión atómica, plazos y entrega final'
     assert.equal(history.length, 3); assert.deepEqual(history[0].answer, answer); assert.equal(Number(history[0].grade), 80); assert.ok(history[0].submitted_at);
     await db.query('delete from aula_memberships where student_id = $1', [student]);
     assert.equal((await asUser(student, 'select * from aula_reviews')).length, 0);
+    await db.query('insert into aula_memberships(group_id,student_id) values($1,$2)', [groupId, student]);
+    await db.query('update aula_assignments set due_at = null where id = $1', [assignmentId]);
+    await db.query("update aula_submissions set correction_due_at = now() + interval '1 day' where assignment_id = $1", [assignmentId]);
+    const requestId = '00000000-0000-4000-8000-000000000010', finalId = '00000000-0000-4000-8000-000000000011';
+    const patch = { changes: [{ path: ['cells','1','code'], value: 'print(777)' }] };
+    const patchSave = (id, revision, changes, key, submit = false) => db.query('select aula_patch_answer($1,$2,$3,$4,$5,$6) as receipt', [assignmentId, id, revision, JSON.stringify(changes), key, submit]);
+    const progress = token => db.query('select aula_progress_summary($1,$2,$3) as summary', [assignmentId, teacher, token]);
+    const before = (await progress(null)).rows[0].summary;
+    assert.equal((await progress(before.token)).rows[0].summary.unchanged, true);
+    assert.equal(before.students[0].submission?.answer, undefined); assert.equal(before.assignment.snapshot, undefined);
+    assert.equal((await patchSave(student, 6, patch, requestId)).rows[0].receipt.revision, 7);
+    assert.equal((await progress(before.token)).rows[0].summary.unchanged, false);
+    await db.query('update aula_assignments set closed = true where id = $1', [assignmentId]);
+    assert.equal((await patchSave(student, 6, patch, requestId)).rows[0].receipt.revision, 7); // Acuse perdido: mismo resultado, sin escribir otra vez.
+    await assert.rejects(patchSave(student, 6, { changes: [] }, requestId), /otro guardado/);
+    await db.query('update aula_assignments set closed = false where id = $1', [assignmentId]);
+    await save(student, 7); // Cliente anterior: invalida el acuse viejo.
+    await assert.rejects(patchSave(student, 6, patch, requestId), /otra sesión/);
+    assert.equal((await patchSave(student, 8, { changes: [] }, finalId, true)).rows[0].receipt.revision, 9);
+    assert.equal((await patchSave(student, 8, { changes: [] }, finalId, true)).rows[0].receipt.revision, 9);
+    assert.equal((await patchSave(stranger, 0, { changes: [{ path: [], value: answer }] }, requestId)).rows[0].receipt.revision, 1);
+    assert.equal((await db.query("select has_function_privilege('authenticated','aula_patch_answer(uuid,uuid,integer,jsonb,uuid,boolean)','execute') as allowed")).rows[0].allowed, false);
+    await assert.rejects(db.query('select aula_progress_summary($1,$2,null)', [assignmentId, stranger]), /sin acceso/);
   } finally { await db.close(); }
 });
