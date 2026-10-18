@@ -7,6 +7,8 @@ Se conserva el proyecto de Supabase y sus cuentas, grupos, actividades y respues
 
 ## Repositorio y Blueprint
 
+Repositorio de esta instalación: [rodolfoluna/aula-python-pwa](https://github.com/rodolfoluna/aula-python-pwa), privado, rama `main`.
+
 1. El código debe estar en un repositorio privado de GitHub. No subir `.env`, claves, CSV de accesos, `node_modules`, capturas ni archivos del profesor o de alumnos.
 2. Crear una cuenta gratuita de Render, aceptar sus términos e iniciar sesión.
 3. Conectar a Render solamente el repositorio de Aula Python.

@@ -4,6 +4,9 @@ services:
     runtime: static
     buildCommand: node scripts/build-runner.mjs
     staticPublishPath: build/runner
+    envVars:
+      - key: SKIP_INSTALL_DEPS
+        value: "true"
     headers:
       - path: /*
         name: Cross-Origin-Opener-Policy
