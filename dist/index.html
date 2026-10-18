@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#182b38">
+  <title>Aula Python · Laboratorio</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/notebook.css">
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="/">a<span>·</span>p <span class="brand-name">Aula Python</span></a><span class="prototype">PRUEBA TÉCNICA / 01</span><span id="save-state" role="status">Guardado local</span></header>
+  <div class="layout">
+    <aside>
+      <div class="eyebrow">ESPACIO DE TRABAJO</div>
+      <button class="nav active" id="nav-notebook" aria-pressed="true"><span>▤</span> Notebook <small>01</small></button>
+      <button class="nav" id="nav-files" aria-pressed="false"><span>⌘</span> Archivos Python <small>02</small></button>
+      <div class="aside-note"><span class="dot"></span> Python en tu navegador<p>El código se ejecuta en este equipo. No necesitas instalar Python.</p></div>
+      <div class="aside-bottom">LABORATORIO DOCENTE<br><span>Variables · Consola · Gráficas</span></div>
+    </aside>
+    <main>
+      <div class="intro"><div><div class="eyebrow">APRENDER HACIENDO</div><h1 id="page-title">Un cuaderno, muchas ideas.</h1><p id="page-description">Ejecuta las celdas en orden: comparten variables, funciones y objetos.</p></div><span class="badge">PYTHON / PYODIDE</span></div>
+      <div class="runtime-bar"><span class="runtime-dot" id="runtime-dot"></span><span id="runtime-state" role="status">Python sin iniciar</span><span class="runtime-hint" id="runtime-hint">La primera carga necesita internet.</span><button id="reset-runtime">↻ Reiniciar Python</button><button id="stop" class="danger" disabled>■ Detener</button></div>
+      <details id="runtime-details" class="runtime-details"><summary>Detalles de preparación de Python</summary><p>Las descargas de Pillow y la preparación de fuentes de Matplotlib son normales. Aquí se conservan sus mensajes.</p><pre id="runtime-log"></pre></details>
+      <section id="notebook-panel" aria-label="Notebook">
+        <div class="notebook-heading"><label class="sr-only" for="notebook-title">Título del notebook</label><input id="notebook-title" maxlength="160" value="Mi primer notebook"><label class="role-control">Vista <select id="role-selector"><option value="teacher">Profesor</option><option value="student">Alumno (prueba)</option></select></label></div>
+        <div id="teacher-tools" class="notebook-tools"><button id="new-notebook">Nuevo notebook</button><button id="import-notebook">↑ Importar .ipynb</button><button id="export-notebook">↓ Descargar .ipynb</button><a href="/examples/actividad.ipynb" download>Descargar ejemplo</a><input type="file" id="notebook-file" accept=".ipynb,application/x-ipynb+json,application/json" hidden></div>
+        <fieldset id="student-permissions"><legend>Permisos de estructura para alumnos</legend><label><input type="checkbox" data-permission="add"> Agregar celdas</label><label><input type="checkbox" data-permission="delete"> Eliminar celdas editables</label><label><input type="checkbox" data-permission="reorder"> Reordenar celdas editables</label><p>Las celdas bloqueadas se pueden ejecutar, pero no editar, eliminar ni intercambiar con otras celdas.</p></fieldset>
+        <div id="student-banner" class="student-banner" hidden>Vista de prueba del alumno: trabajas sobre una copia. Los cambios no modifican la plantilla del profesor.<button id="reset-student">Restablecer mi copia</button></div>
+        <p id="notebook-notice" class="notebook-notice" role="status" hidden></p>
+        <div class="section-toolbar"><span id="cell-summary">Celdas del notebook</span><div><label class="sr-only" for="new-cell-type">Tipo de nueva celda</label><select id="new-cell-type"><option value="code">Código Python</option><option value="markdown">Instrucciones Markdown</option></select><button id="add-cell">＋ Celda</button><button id="run-all" class="primary">▶ Ejecutar todas</button></div></div>
+        <div id="cells"></div>
+      </section>
+      <section id="files-panel" aria-label="Archivos Python" hidden>
+        <div class="section-toolbar"><span><strong>02</strong> &nbsp; Un programa, varios archivos</span><button id="run-files" class="primary">▶ Ejecutar programa</button></div>
+        <article class="instruction compact"><span class="label">EJERCICIO</span><p>Crea funciones en <code>utilidades.py</code> e impórtalas desde <code>main.py</code>. Cada ejecución del programa comienza con sus variables y módulos locales limpios.</p></article>
+        <div class="file-workspace"><div class="file-toolbar"><div id="file-tabs" role="tablist" aria-label="Archivos"></div><button id="add-file" title="Crear archivo">＋ Archivo</button></div><div class="file-meta"><label>Archivo principal <select id="entry-file"></select></label><button id="delete-file">Eliminar archivo actual</button></div><label class="sr-only" for="file-editor">Código del archivo</label><textarea id="file-editor" class="code-editor" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea></div>
+        <div class="program-results"><span class="label">RESULTADO DEL PROGRAMA</span><div id="file-output" class="output"></div></div>
+      </section>
+      <div class="footnote">Los cambios se guardan en este navegador. Reiniciar Python borra la memoria de ejecución, pero conserva tu código.</div>
+    </main>
+  </div>
+  <section id="input-dock" class="input-dock" aria-label="Entrada de Python" hidden><div><span class="input-icon">›_</span><div><strong>Tu programa espera una respuesta</strong><p id="input-prompt">Escribe el valor para input()</p></div></div><form id="input-form"><label class="sr-only" for="stdin">Respuesta para Python</label><input id="stdin" autocomplete="off" placeholder="Escribe aquí y presiona Enter…"><button class="primary" type="submit">Enviar ↵</button></form></section>
+  <dialog id="file-dialog"><form id="file-form"><h2>Nuevo archivo Python</h2><label for="filename">Nombre del archivo</label><input id="filename" placeholder="funciones.py" required pattern="[A-Za-z_][A-Za-z0-9_]*\.py"><p>Usa letras, números y guion bajo; termina en .py.</p><div><button type="button" id="cancel-file">Cancelar</button><button class="primary" type="submit">Crear archivo</button></div><p id="file-error" role="alert"></p></form></dialog>
+  <dialog id="import-dialog"><h2>Importar notebook</h2><p id="import-summary"></p><ul id="import-warnings"></ul><p>Se reemplazará la plantilla actual y se reiniciará Python. Descarga tu notebook actual si deseas conservarlo.</p><div class="dialog-actions"><button id="cancel-import">Cancelar</button><button id="confirm-import" class="primary">Importar notebook</button></div></dialog>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

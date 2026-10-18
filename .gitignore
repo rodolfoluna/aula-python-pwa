@@ -1,0 +1,10 @@
+node_modules/
+.runtime-cache/
+*.log
+.env
+.env.*
+!.env.example
+data/
+build/
+.deployment/
+*.zip
