@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve, extname, sep } from 'node:path';
@@ -17,7 +18,12 @@ export function createServer() {
       const path = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
       const target = resolve(root, '.' + (path === '/' ? '/index.html' : path));
       if (!target.startsWith(root + sep)) { res.writeHead(403).end(); return; }
-      const content = await readFile(target);
+      let content = await readFile(target);
+      if (path === '/runner-sw.js') {
+        const hash = createHash('sha256');
+        for (const file of ['runner.html', 'runner.js', 'runner.css', 'python-worker.js', 'runtime-assets.json']) hash.update(await readFile(resolve(root, file)));
+        content = Buffer.from(content.toString().replaceAll('__RUNNER_VERSION__', hash.digest('hex').slice(0, 16)));
+      }
       res.setHeader('Content-Type', (types[extname(target)] || 'application/octet-stream') + '; charset=utf-8');
       res.end(content);
     } catch { res.writeHead(404).end('No encontrado'); }

@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "node server.mjs",
     "start": "node server.mjs",
-    "start:production": "node accounts/server.mjs",
+    "start:production": "node scripts/build-pwa.mjs && node accounts/server.mjs",
+    "build:pwa": "node scripts/build-pwa.mjs",
+    "pretest": "node scripts/build-pwa.mjs",
     "build:runner": "node scripts/build-runner.mjs",
-    "accounts": "node --env-file-if-exists=.env accounts/server.mjs",
+    "accounts": "node scripts/build-pwa.mjs && node --env-file-if-exists=.env accounts/server.mjs",
     "teacher:init": "node --env-file-if-exists=.env scripts/create-teacher.mjs",
     "teacher:repair": "node --env-file-if-exists=.env scripts/repair-teachers.mjs",
     "teacher:reset": "node --env-file-if-exists=.env scripts/reset-teacher.mjs",
@@ -16,9 +18,12 @@
     "activities:check": "node --env-file-if-exists=.env scripts/check-activities.mjs",
     "test": "node --test tests/*.test.mjs"
   },
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.10",
+    "fake-indexeddb": "6.2.4",
     "jsdom": "29.1.1",
     "marked": "18.1.1",
     "pyodide": "0.27.7"

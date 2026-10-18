@@ -8,7 +8,7 @@ const date = value => value ? new Date(value).toLocaleString('es-MX') : 'Sin fec
 const reviewedCurrent = sub => sub?.reviewed_at && sub?.submitted_at && Date.parse(sub.reviewed_at) >= Date.parse(sub.submitted_at);
 const answerStatus = sub => !sub ? 'Sin iniciar' : sub.submitted_at ? (reviewedCurrent(sub) ? 'Revisada' : 'Entregada') : sub.returned_at ? 'Devuelta para correcciones' : 'En progreso';
 const gradeText = sub => sub?.grade == null ? 'Sin calificación' : `${Number(sub.grade)}/100${reviewedCurrent(sub) ? '' : ' · Nota de la revisión anterior (provisional)'}`;
-export function setupActivities({ api, perform, getGroups, getProfile, getRunnerOrigin }) {
+export function setupActivities({ api, perform, getGroups, getProfile, getRunnerOrigin, beforeOpen = async () => {} }) {
   const progressBudget = new PollBudget(), progressTokens = new Map(), progressFlights = new Map();
   let sessionKey, profile, view = 'roster', catalog = { activities: [], assignments: [] }, draft, draftDirty = false, reviewDirty = false, worksheet, sync, opened, progressId, reviewedStudent, ticker, frame, runnerReady, runnerBusy, queued, runnerTimer, cacheKey, epoch = 0;
   const notice = (text, error = false) => { $('#activities-notice').textContent = text; $('#activities-notice').hidden = !text; $('#activities-notice').className = error ? 'error' : ''; };
@@ -17,7 +17,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   function syncControls() {
     worksheet?.syncControls();
     $('#workspace-nav').hidden = !profile || profile.role !== 'teacher' || profile.must_change_password;
-    if (sync) { $('#save-answer').disabled = !opened?.writable || sync.conflict || sync.blocked || !!sync.inFlight; $('#submit-answer').disabled = $('#save-answer').disabled; }
+    if (sync) { $('#save-answer').disabled = !opened?.writable || sync.conflict || sync.blocked || !!sync.inFlight; $('#submit-answer').disabled = $('#save-answer').disabled || window.navigator?.onLine === false; }
     document.querySelectorAll('.worksheet-run').forEach(button => { if (button.textContent.includes('Ejecutar')) button.disabled = !!runnerBusy; });
   }
   function teardown() {
@@ -59,22 +59,24 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     $('#draft-state').textContent = draftDirty ? 'Borrador local recuperado; todavía no está guardado en Supabase.' : 'Guarda antes de asignar a un grupo.';
     $('#work-instructions').replaceChildren(); worksheet = createWorksheet($('#worksheet'), { activity: draft, role: 'teacher', onChange: cacheDraft, run, notice }); startRunner(false); syncControls();
   }
-  async function openAnswer(assignmentId, studentId, force = false) {
+  async function openAnswer(assignmentId, studentId, force = false, discardLocal = false) {
     if (!force && !canLeave()) return;
-    const data = await api('activity-open', { assignmentId, ...(studentId ? { studentId } : {}) });
+    await beforeOpen();
+    const data = await api('activity-open', { assignmentId, ...(studentId ? { studentId } : {}) }, discardLocal ? { networkOnly: true } : {});
+    if (discardLocal) localStorage.removeItem(`aula-answer:${profile.id}:${assignmentId}`);
     teardown(); opened = data; reviewedStudent = studentId;
-    const own = profile.role === 'student', template = data.assignment.snapshot, currentEpoch = epoch;
+    const own = profile.role === 'student', ownerId = profile.id, template = data.assignment.snapshot, currentEpoch = epoch;
     $('#activity-workspace').hidden = false; $('#teacher-draft-fields').hidden = true; $('#answer-controls').hidden = !own;
     $('#work-title').textContent = `${template.title} · versión ${data.assignment.activity_version}${!own && data.student ? ' · ' + data.student.control + ' · ' + data.student.name : ''}`; renderMarkdown($('#work-instructions'), template.instructions);
     $('#work-readonly').hidden = data.writable;
     let answer = data.answer;
     if (own) {
-      sync = new DraftSync({ key: `aula-answer:${profile.id}:${assignmentId}`, answer, revision: data.revision, delta: true, lastSaveId: data.submission?.last_save_id, storage: data.writable ? localStorage : undefined, validate: value => validateAnswer(template, value),
-        save: async (payload, options) => (await api('answer-save', { assignmentId, ...payload }, options)).submission,
+      sync = new DraftSync({ key: `aula-answer:${ownerId}:${assignmentId}`, answer, revision: data.revision, delta: true, lastSaveId: data.submission?.last_save_id, storage: localStorage, validate: value => validateAnswer(template, value),
+        save: async (payload, options) => (await api('answer-save', { assignmentId, actorId: ownerId, ...payload }, options)).submission,
         status: (text, kind) => { if (currentEpoch === epoch) { $('#answer-state').textContent = text; $('#answer-state').className = kind; } },
       });
       answer = sync.answer;
-      if (!data.writable) $('#answer-state').textContent = data.submission?.submitted_at ? 'Entregada · ' + date(data.submission.submitted_at) : 'Actividad cerrada o vencida';
+      if (!data.writable) $('#answer-state').textContent = sync.dirty ? 'Se muestra tu copia local pendiente. La actividad está cerrada, vencida o entregada; no se sobrescribirá la versión del servidor.' : data.submission?.submitted_at ? 'Entregada · ' + date(data.submission.submitted_at) : 'Actividad cerrada o vencida';
       ticker = setInterval(() => { if (!document.hidden) autoSave(); }, 60000);
       ticker.unref?.();
     }
@@ -159,10 +161,11 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     try { return await request; } finally { if (progressFlights.get(id) === request) progressFlights.delete(id); }
   }
   const online = () => window.navigator?.onLine !== false;
-  function autoSave(keepalive = false) { if (online() && sync?.dirty && !sync.conflict && !sync.blocked && !sync.inFlight && Date.now() >= sync.nextRetryAt) sync.flush(false, { keepalive }).then(syncControls).catch(syncControls); }
+  function autoSave(keepalive = false) { if (opened?.writable && online() && sync?.dirty && !sync.conflict && !sync.blocked && !sync.inFlight && Date.now() >= sync.nextRetryAt) sync.flush(false, { keepalive }).then(syncControls).catch(syncControls); }
   const progressTimer = setInterval(() => { if (profile?.role === 'teacher' && progressId && !$('#activities-hub').hidden && !document.hidden && online() && progressBudget.due()) showProgress(progressId, true).catch(() => {}); }, 15000);
   document.addEventListener('visibilitychange', () => { if (document.hidden) autoSave(true); else { autoSave(); if (progressId && progressBudget.due() && online() && profile?.role === 'teacher' && !$('#activities-hub').hidden) showProgress(progressId, true).catch(() => {}); } });
   window.addEventListener('online', () => autoSave());
+  window.addEventListener('offline', syncControls);
   window.addEventListener('pagehide', () => autoSave(true));
   progressTimer.unref?.();
   $('#roster-nav').onclick = () => { if (!canLeave()) return; view = 'roster'; $('#teacher-panel').hidden = false; $('#activities-hub').hidden = true; };
@@ -183,7 +186,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     const groupIds = [...document.querySelectorAll('[name="assigned-group"]:checked')].map(box => box.value), dateValue = $('#assignment-due').value;
     await api('assign-activity', { activityId: activity.id, version: activity.version, groupIds, dueAt: dateValue ? new Date(dateValue).toISOString() : null }); await refresh(); notice('Actividad asignada. Los alumnos del grupo ya pueden abrirla.');
   }); };
-  $('#save-answer').onclick = () => perform(async () => { await sync?.flush(); syncControls(); });
+  $('#save-answer').onclick = () => perform(async () => { if (!online()) { sync?.cache(); sync?.notify('Guardado en este equipo; pendiente de sincronizar.', 'pending'); return; } await sync?.flush(); syncControls(); });
   for (const id of ['review-grade', 'review-feedback', 'correction-due']) $('#' + id).oninput = () => { reviewDirty = true; $('#review-state').textContent = 'Revisión sin guardar'; };
   $('#reload-review').onclick = () => perform(async () => { if (opened) await openAnswer(opened.assignment.id, reviewedStudent); });
   $('#review-form').onsubmit = event => { event.preventDefault(); const action = event.submitter?.value || 'review'; perform(async () => {
@@ -194,8 +197,9 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     await api('answer-review', { assignmentId: id, studentId, revision: opened.revision, action, grade: gradeValue === '' ? null : Number(gradeValue), feedback: $('#review-feedback').value, correctionDueAt: due ? new Date(due).toISOString() : null });
     reviewDirty = false; await openAnswer(id, studentId, true); await showProgress(id); await refresh(); notice(action === 'return' ? 'Entrega devuelta. El alumno ya puede corregirla dentro de su nuevo plazo.' : 'Calificación y comentarios guardados. El alumno ya puede verlos.');
   }); };
-  $('#reload-answer').onclick = () => perform(async () => { if (!opened || !confirm('¿Cargar la versión del servidor? Se descartarán los cambios locales de esta actividad.')) return; const id = opened.assignment.id; localStorage.removeItem(`aula-answer:${profile.id}:${id}`); await openAnswer(id, null, true); });
+  $('#reload-answer').onclick = () => perform(async () => { if (!opened || !confirm('¿Cargar la versión del servidor? Se descartarán los cambios locales de esta actividad.')) return; await openAnswer(opened.assignment.id, null, true, true); });
   $('#submit-answer').onclick = () => perform(async () => {
+    if (!online()) throw new Error('Conecta Internet para confirmar la entrega. Tu avance se conserva en este equipo.');
     if (!sync || !confirm('¿Entregar la actividad? Tu respuesta quedará en modo de solo lectura.')) return;
     worksheet.setReadonly(true);
     try { await sync.flush(true); opened.writable = false; $('#work-readonly').hidden = false; await refresh(); await openAnswer(opened.assignment.id, null, true); }
@@ -207,6 +211,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   for (const eventName of ['copy', 'cut', 'paste', 'drop']) document.addEventListener(eventName, event => { if (profile?.role === 'student' && !profile.must_change_password) event.preventDefault(); }, true);
   document.addEventListener('beforeinput', event => { if (profile?.role === 'student' && !profile.must_change_password && ['insertFromPaste', 'insertFromDrop'].includes(event.inputType)) event.preventDefault(); }, true);
   return {
+    current: () => opened ? { assignmentId: opened.assignment.id, sync, writable: opened.writable } : null,
     syncControls,
     async setSession(value) {
       const nextKey = value ? value.id + ':' + value.must_change_password : '';

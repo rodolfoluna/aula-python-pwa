@@ -46,6 +46,7 @@ test('API: cambio obligatorio, permisos, sesiones revocadas y separación del ej
     assert.equal(result.status, 200); assert.equal((await request('me', undefined, pupilCookie)).status, 401);
     result = await request('my-groups', undefined, changedCookie); assert.equal(result.body.groups[0].name, 'Grupo A');
     assert.equal((await request('roster', undefined, changedCookie)).status, 403);
+    assert.equal((await request('answer-save', { actorId: 'another-student', assignmentId: 'one' }, changedCookie)).status, 403);
     result = await request('login', { login: 'profesor@example.com', password: 'ProfesorSoloPruebas' }); const teacherCookie = result.cookie;
     assert.equal((await request('membership', { groupId: otherGroup.id, studentId: student.id, member: true }, teacherCookie)).status, 404);
     assert.equal((await request('roster', undefined, teacherCookie, 'http://127.0.0.1:4173')).status, 403);

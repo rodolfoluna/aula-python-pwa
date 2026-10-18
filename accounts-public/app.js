@@ -1,10 +1,14 @@
 import { previewCsv, credentialsCsv } from './csv.js';
 import { setupActivities } from './activities.js';
+import { OfflineWorkspace } from './offline-store.js';
+import { setupPwa } from './pwa.js';
 const $ = selector => document.querySelector(selector);
 let profile, roster = { students: [], groups: [], memberships: [] }, preview = [], credentials = [], busy = false, configured = false;
-let activities, runnerOrigin = 'http://127.0.0.1:4173';
+let activities, pwa, runnerOrigin = 'http://127.0.0.1:4173';
+const offline = new OfflineWorkspace();
+try { await offline.load(); } catch { /* El aula online también funciona sin IndexedDB. */ }
 function message(text, error = false) { $('#message').textContent = text; $('#message').classList.toggle('error', error); $('#message').hidden = !text; }
-async function api(path, data, options = {}) {
+async function networkApi(path, data, options = {}) {
   const body = data === undefined ? undefined : JSON.stringify(data), controller = path === 'answer-save' ? new AbortController() : null;
   const timeout = controller && setTimeout(() => controller.abort(), 90000); timeout?.unref?.();
   let response;
@@ -12,10 +16,31 @@ async function api(path, data, options = {}) {
   finally { clearTimeout(timeout); }
   const result = await response.json();
   if (!response.ok) {
-    if (response.status === 401 && !['login', 'password'].includes(path)) { profile = null; credentials = []; $('#credentials-table').replaceChildren(); $('#credentials-dialog').close(); await renderSession(); }
+    if (response.status === 401 && !['login', 'password'].includes(path)) { await offline.deactivate().catch(() => {}); profile = null; credentials = []; $('#credentials-table').replaceChildren(); $('#credentials-dialog').close(); await renderSession(); }
     throw Object.assign(new Error(result.error || 'No se pudo completar la solicitud.'), { status: response.status });
   }
   return result;
+}
+async function api(path, data, options = {}) {
+  const owner = profile;
+  if (window.localStorage.getItem('aula-logout-pending')) { await networkApi('logout', {}); window.localStorage.removeItem('aula-logout-pending'); }
+  if (path === 'answer-save' && offline.needsIdentity) {
+    const identity = (await networkApi('me')).profile;
+    if (identity?.id !== data.actorId) throw Object.assign(new Error('Vuelve a iniciar sesión con la cuenta dueña del avance.'), { status: 403 });
+    offline.needsIdentity = false;
+  }
+  try {
+    const result = await networkApi(path, data, options);
+    offline.offline = false;
+    try { await offline.remember(owner, path, data, result); } catch { message('El servidor confirmó la operación, pero no se pudo actualizar la copia sin conexión.', true); }
+    pwa?.render(); return result;
+  } catch (error) {
+    if (!options.networkOnly && (!error.status || [502, 503, 504].includes(error.status))) {
+      const cached = await offline.read(profile, path, data).catch(() => null);
+      if (cached) { pwa?.render(); return cached; }
+    }
+    throw error;
+  }
 }
 function syncControls() {
   document.querySelectorAll('button, input, select').forEach(element => { element.disabled = busy; });
@@ -23,6 +48,7 @@ function syncControls() {
   $('#confirm-csv').disabled = busy || !preview.some(row => row.valid);
   document.querySelectorAll('[data-membership]').forEach(input => { input.disabled = busy || !$('#roster-group').value; });
   if (!busy) activities?.syncControls();
+  pwa?.render();
 }
 async function perform(action) {
   if (busy) return;
@@ -78,6 +104,7 @@ async function showCredentials(records, rejected = []) {
   await loadRoster();
 }
 async function renderSession() {
+  if (profile && offline.active && offline.active.profile.id !== profile.id) await offline.deactivate().catch(() => {});
   $('#login-panel').hidden = !!profile; $('#session-tools').hidden = !profile;
   $('#password-panel').hidden = !profile?.must_change_password;
   $('#teacher-panel').hidden = !profile || profile.must_change_password || profile.role !== 'teacher';
@@ -93,13 +120,15 @@ async function renderSession() {
     }
   }
   await activities?.setSession(profile);
+  pwa?.render();
+  void pwa?.resume(true);
 }
 $('#login-form').onsubmit = event => { event.preventDefault(); perform(async () => { const result = await api('login', { login: $('#login').value, password: $('#password').value }); $('#password').value = ''; profile = result.profile; await renderSession(); }); };
 $('#password-form').onsubmit = event => { event.preventDefault(); perform(async () => {
   if ($('#new-password').value !== $('#repeat-password').value) throw new Error('Las nuevas contraseñas no coinciden.');
   await api('password', { currentPassword: $('#current-password').value, password: $('#new-password').value }); $('#password-form').reset(); profile = (await api('me')).profile; await renderSession(); message('Contraseña actualizada. Tu cuenta ya está lista.');
 }); };
-$('#logout').onclick = () => perform(async () => { await api('logout', {}); profile = null; credentials = []; preview = []; roster = { students: [], groups: [], memberships: [] }; $('#students-table').replaceChildren(); $('#my-groups').replaceChildren(); $('#credentials-table').replaceChildren(); $('#csv-preview').replaceChildren(); $('#csv-preview-panel').hidden = true; $('#csv-summary').textContent = 'Vista previa antes de crear las cuentas.'; $('#student-search').value = ''; await renderSession(); });
+$('#logout').onclick = () => perform(async () => { try { await api('logout', {}); } catch (error) { if (error.status) throw error; localStorage.setItem('aula-logout-pending', '1'); } await offline.deactivate().catch(() => {}); profile = null; credentials = []; preview = []; roster = { students: [], groups: [], memberships: [] }; $('#students-table').replaceChildren(); $('#my-groups').replaceChildren(); $('#credentials-table').replaceChildren(); $('#csv-preview').replaceChildren(); $('#csv-preview-panel').hidden = true; $('#csv-summary').textContent = 'Vista previa antes de crear las cuentas.'; $('#student-search').value = ''; await renderSession(); });
 $('#student-form').onsubmit = event => { event.preventDefault(); perform(async () => { const result = await api('students', { rows: [{ control: $('#student-control').value, name: $('#student-name').value }], groupId: $('#student-group').value || null }); if (result.created.length) $('#student-form').reset(); await showCredentials(result.created, result.rejected); }); };
 $('#group-form').onsubmit = event => { event.preventDefault(); perform(async () => { await api('groups', { name: $('#group-name').value }); $('#group-form').reset(); await loadRoster(); message('Grupo creado. Selecciónalo en la lista de alumnos para agregar integrantes.'); }); };
 $('#csv-file').onchange = event => { const file = event.target.files?.[0]; event.target.value = ''; if (!file) return; perform(async () => {
@@ -117,7 +146,8 @@ $('#csv-example').onclick = () => download('\uFEFFnumero_control,nombre\r\n00123
 $('#student-search').oninput = renderStudents; $('#roster-group').onchange = renderStudents;
 $('#refresh-roster').onclick = () => perform(loadRoster);
 window.addEventListener('beforeunload', event => { if (credentials.length) { event.preventDefault(); event.returnValue = ''; } });
-activities = setupActivities({ api, perform, getGroups: () => roster.groups, getProfile: () => profile, getRunnerOrigin: () => runnerOrigin });
+activities = setupActivities({ api, perform, getGroups: () => roster.groups, getProfile: () => profile, getRunnerOrigin: () => runnerOrigin, beforeOpen: () => pwa?.wait() });
+pwa = setupPwa({ workspace: offline, api, getProfile: () => profile, getRunnerOrigin: () => runnerOrigin, current: () => activities.current(), perform });
 await perform(async () => {
   const status = await api('status'); configured = status.configured; runnerOrigin = status.runnerOrigin || runnerOrigin;
   $('#local-lab-link').hidden = new URL(runnerOrigin).protocol === 'https:';

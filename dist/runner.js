@@ -1,6 +1,12 @@
 const parentOrigin = new URL(new URLSearchParams(location.search).get('parent') || 'http://127.0.0.1:4180').origin;
 const $ = selector => document.querySelector(selector);
 const tell = (type, data = {}) => parent.postMessage({ type, ...data }, parentOrigin);
+let serviceWorkerReady;
+async function offlineWorker() {
+  if (!navigator.serviceWorker) throw new Error('El navegador no permite preparar Python sin conexión en este contexto.');
+  return serviceWorkerReady ||= navigator.serviceWorker.register('/runner-sw.js', { updateViaCache: 'none' }).then(() => navigator.serviceWorker.ready);
+}
+if (typeof navigator !== 'undefined' && navigator.serviceWorker) offlineWorker().catch(() => {});
 let worker, loaded, control, inputBytes, interrupt, busy = false, student = true, output, pending, sequence = 0, timeout, killTimer, stopped = false;
 function status(text) { $('#state').textContent = text; }
 function append(channel, text) {
@@ -45,6 +51,14 @@ function stop(message = 'Ejecución detenida.') {
 }
 window.addEventListener('message', async event => {
   if (event.source !== parent || event.origin !== parentOrigin) return;
+  if (event.data?.type === 'aula-prepare-offline') {
+    try {
+      const registration = await offlineWorker(), channel = new MessageChannel();
+      channel.port1.onmessage = ({ data }) => { tell('aula-offline-progress', data); if (data.ready || data.error) channel.port1.close(); };
+      registration.active.postMessage({ type: 'prepare-python' }, [channel.port2]);
+    } catch (error) { tell('aula-offline-progress', { error: error.message }); }
+    return;
+  }
   if (event.data?.type === 'aula-config') { student = event.data.student !== false; return; }
   if (event.data?.type !== 'aula-run' || busy || !Array.isArray(event.data.items) || event.data.items.length > 100) return;
   busy = true; stopped = false; status('Preparando ejecución…'); tell('aula-busy', { busy: true }); $('#stop').disabled = false; $('#reset').disabled = true;

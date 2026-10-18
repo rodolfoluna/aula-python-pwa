@@ -11,6 +11,9 @@ const publicRoot = new URL('../accounts-public/', import.meta.url);
 const hash = value => createHash('sha256').update(value).digest('hex');
 const SESSION_MS = 8 * 60 * 60 * 1000;
 const extraModules = new Map([['/dist/answer-patch.js', ['../dist/answer-patch.js', 'text/javascript']], ['/sync-policy.js', ['sync-policy.js', 'text/javascript']]]);
+for (const name of ['pwa.js', 'offline-store.js', 'sw.js', 'shell-assets.js']) extraModules.set('/' + name, [name, 'text/javascript']);
+extraModules.set('/manifest.webmanifest', ['manifest.webmanifest', 'application/manifest+json']);
+for (const size of [192, 512]) extraModules.set(`/icons/icon-${size}.png`, [`icons/icon-${size}.png`, 'image/png']);
 const staticFiles = new Map([['/', ['index.html', 'text/html']], ['/app.js', ['app.js', 'text/javascript']], ['/styles.css', ['styles.css', 'text/css']], ['/csv.js', ['csv.js', 'text/javascript']], ['/activities.js', ['activities.js', 'text/javascript']], ['/worksheet.js', ['worksheet.js', 'text/javascript']], ['/draft-sync.js', ['draft-sync.js', 'text/javascript']], ['/activities.css', ['activities.css', 'text/css']], ...['activity-model.js', 'notebook.js', 'markdown.js', 'vendor/marked.js'].map(name => ['/dist/' + name, ['../dist/' + name, 'text/javascript']])]);
 
 export function createAccountsServer({ store, configError, secure = false, origin, runnerOrigin = 'http://127.0.0.1:4173' } = {}) {
@@ -84,7 +87,7 @@ export function createAccountsServer({ store, configError, secure = false, origi
       if (path === '/api/activities' && req.method === 'GET') { json(res, 200, await activities.list(profile)); return; }
       if (path === '/api/activity-open' && req.method === 'POST') { const data = await body(req); json(res, 200, await activities.open(profile, data.assignmentId, data.studentId)); return; }
       if (path === '/api/review-history' && req.method === 'POST') { json(res, 200, await activities.reviewHistory(profile, await body(req))); return; }
-      if (path === '/api/answer-save' && req.method === 'POST') { const data = await body(req); const { answer, ...receipt } = await activities.saveAnswer(profile, data); json(res, 200, { submission: receipt }); return; }
+      if (path === '/api/answer-save' && req.method === 'POST') { const data = await body(req); if (data.actorId && data.actorId !== profile.id) throw new AccountError(403, 'La sesión no corresponde al alumno dueño del avance.'); const { answer, ...receipt } = await activities.saveAnswer(profile, data); json(res, 200, { submission: receipt }); return; }
       if (path === '/api/my-groups' && req.method === 'GET') { json(res, 200, { groups: await store.studentGroups(profile.id) }); return; }
       if (profile.role !== 'teacher') throw new AccountError(403, 'Esta operación requiere una cuenta de profesor.');
       if (path === '/api/activity-template' && req.method === 'POST') { const data = await body(req); json(res, 200, { activity: await activities.template(profile, data.activityId) }); return; }

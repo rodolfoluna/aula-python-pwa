@@ -8,3 +8,5 @@ data/
 build/
 .deployment/
 *.zip
+accounts-public/shell-assets.js
+accounts-public/icons/

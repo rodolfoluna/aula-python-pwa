@@ -6,6 +6,8 @@ El módulo de **cuentas, alumnos y grupos con Supabase** ya tiene backend e inte
 
 Para **crear actividades, asignarlas a grupos y contestarlas con las cuentas reales**, seguir [ACTIVIDADES_SETUP.md](ACTIVIDADES_SETUP.md). El módulo incluye notebooks, ejercicios con varios archivos, avances, entregas, calificaciones de 0 a 100, comentarios y devolución para correcciones con historial. Requiere las migraciones `202610170003_activities.sql` y `202610170004_reviews.sql` y reiniciar ambos servidores; si ya usas actividades, ejecutar solo la nueva migración 004.
 
+La app con cuentas ahora es instalable y permite preparar actividades y Python para trabajar sin conexión. Consulta [PWA_OFFLINE.md](PWA_OFFLINE.md) para instalarla, conservar avances y sincronizarlos al recuperar Internet.
+
 ## Iniciar
 
 Para publicar la app y permitir acceso desde otros equipos, consultar [PUBLICAR_RENDER.md](PUBLICAR_RENDER.md). Incluye un Blueprint para un servidor gratuito y una consola estática separada; Supabase conserva los datos existentes.
@@ -96,7 +98,7 @@ Las pruebas `activities*` verifican permisos de respuesta, versiones publicadas,
 
 ## Antes de usar con alumnos
 
-Esta es una prueba local sin cuentas ni datos personales. El servidor solo escucha en `127.0.0.1` y solo publica `dist/`. No es todavía una PWA instalable ni una plataforma lista para producción.
+Esta es una prueba local sin cuentas ni datos personales. El servidor solo escucha en `127.0.0.1` y solo publica `dist/`. Este apartado describe el laboratorio original de dist/. La app de cuentas tiene un ejecutor separado, validación de permisos en el servidor y preparación PWA; consulta PWA_OFFLINE.md y PUBLICAR_RENDER.md.
 
 El worker se ejecuta en el mismo origen de la interfaz y el código Python puede acceder a APIs JavaScript. Antes de introducir autenticación, se debe mover el ejecutor a un origen separado sin tokens ni datos de usuarios, restringir red y mensajes, sanear futuras salidas HTML y añadir las reglas de autorización del servidor. Los bloqueos actuales se aplican en la interfaz y en las funciones de edición locales: cuando exista backend se debe comprobar contra la plantilla del profesor todo cambio recibido. Un Web Worker ni un selector local de roles son una frontera de seguridad para código hostil.
 
