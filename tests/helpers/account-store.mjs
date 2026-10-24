@@ -67,6 +67,12 @@ export function memoryAccountStore() {
       const value = { ...copy(current), last_save_id: null, last_save_hash: null, last_save_receipt: null, assignment_id: assignmentId, student_id: studentId, answer: copy(answer), revision: revision + 1, updated_at: new Date().toISOString(), submitted_at: submit ? new Date().toISOString() : null };
       submissions.set(key, value); return copy(value);
     },
+    async deleteAssignment(id, teacherId) {
+      if (assignments.get(id)?.teacher_id !== teacherId) return;
+      assignments.delete(id);
+      for (const [key, value] of submissions) if (value.assignment_id === id) submissions.delete(key);
+      for (const [key, value] of reviews) if (value.assignment_id === id) reviews.delete(key);
+    },
     async setAssignmentClosed(id, closed) { assignments.get(id).closed = closed; return copy(assignments.get(id)); },
     async reviewSummaries(assignmentId, studentId) { return [...reviews.values()].filter(row => row.assignment_id === assignmentId && row.student_id === studentId).reverse().map(({ answer, ...rest }) => copy(rest)); },
     async review(id, assignmentId, studentId) { const row = reviews.get(id); return row?.assignment_id === assignmentId && row?.student_id === studentId ? copy(row) : null; },

@@ -1,4 +1,4 @@
-import { clone, createCell, canMove, newExercise, filenameOK } from '../dist/activity-model.js';
+import { clone, createCell, canMove, newExercise, filenameOK, projectWorkspace } from '../dist/activity-model.js';
 import { parseNotebook, exportNotebook } from '../dist/notebook.js';
 import { renderMarkdown } from '../dist/markdown.js';
 
@@ -47,28 +47,40 @@ export function createWorksheet(root, options) {
       if (cell.type === 'markdown') article.append(preview); root.append(article);
     });
   }
+  let project;
+  if (activity.kind === 'files') {
+    project = projectWorkspace(activity, answer);
+    if (teacher) {
+      activity.content.project = project;
+      activity.content.exercises = activity.content.exercises.map(({ id, title, prompt }) => ({ id, title, prompt }));
+    } else {
+      answer.project = { files: project.files, entry: project.entry };
+      delete answer.exercises;
+    }
+  }
   function exercises() {
     const originals = activity.content.exercises;
     if (!originals.length) return;
     exerciseIndex = Math.min(exerciseIndex, originals.length - 1);
-    const original = originals[exerciseIndex], work = teacher ? original : answer.exercises[exerciseIndex];
+    const original = originals[exerciseIndex], work = teacher ? project : answer.project;
     if (!Object.hasOwn(work.files, activeFile)) activeFile = work.entry;
     const nav = el('div', 'worksheet-toolbar');
-    nav.append(button('← Anterior', () => { exerciseIndex--; activeFile = null; render(); }, exerciseIndex === 0, false), select(originals.map((item, index) => [String(index), `${index + 1}. ${item.title}`]), String(exerciseIndex), 'Ejercicio actual', value => { exerciseIndex = Number(value); activeFile = null; render(); }), button('Siguiente →', () => { exerciseIndex++; activeFile = null; render(); }, exerciseIndex === originals.length - 1, false));
-    if (teacher) nav.append(button('Agregar ejercicio', () => { originals.push(newExercise()); exerciseIndex = originals.length - 1; activeFile = null; changed(); }, originals.length >= 30), button('Eliminar ejercicio', () => { if (confirm('¿Eliminar este ejercicio del borrador?')) { originals.splice(exerciseIndex, 1); activeFile = null; changed(); } }, originals.length <= 1));
-    root.append(nav);
+    nav.append(button('← Anterior', () => { exerciseIndex--; render(); }, exerciseIndex === 0, false), select(originals.map((item, index) => [String(index), `${index + 1}. ${item.title}`]), String(exerciseIndex), 'Ejercicio actual', value => { exerciseIndex = Number(value); render(); }), button('Siguiente →', () => { exerciseIndex++; render(); }, exerciseIndex === originals.length - 1, false));
+    if (teacher) nav.append(button('Agregar ejercicio', () => { const { id, title, prompt } = newExercise(); originals.push({ id, title, prompt }); exerciseIndex = originals.length - 1; changed(); }, originals.length >= 30), button('Eliminar ejercicio', () => { if (confirm('¿Eliminar este ejercicio del borrador?')) { originals.splice(exerciseIndex, 1); changed(); } }, originals.length <= 1));
+    root.append(el('p', 'muted', 'Proyecto compartido: todos los ejercicios usan estos mismos archivos.'), nav);
     const prompt = el('div', 'activity-markdown'); renderMarkdown(prompt, original.prompt);
     if (teacher) root.append(input(original.title, 'Título del ejercicio', value => { original.title = value; }), input(original.prompt, 'Enunciado del ejercicio', value => { original.prompt = value; renderMarkdown(prompt, value); }, true));
     root.append(prompt);
     const tabs = el('div', 'worksheet-toolbar');
-    for (const name of Object.keys(work.files)) { const tab = button(name + (original.lockedFiles.includes(name) ? ' 🔒' : ''), () => { activeFile = name; render(); }, false, false); tab.classList.toggle('selected', name === activeFile); tabs.append(tab); }
-    tabs.append(button('Agregar archivo', () => { const name = window.prompt('Nombre del archivo (ejemplo: funciones.py)'); if (!name) return; if (!filenameOK(name) || Object.hasOwn(work.files, name)) { notice('El nombre no es válido o ya existe.', true); return; } work.files[name] = ''; activeFile = name; changed(); }, Object.keys(work.files).length >= 20)); root.append(tabs);
-    const controls = el('div', 'worksheet-toolbar'), locked = !teacher && original.lockedFiles.includes(activeFile);
+    for (const name of Object.keys(work.files)) { const tab = button(name + (project.lockedFiles.includes(name) ? ' 🔒' : ''), () => { activeFile = name; render(); }, false, false); tab.classList.toggle('selected', name === activeFile); tabs.append(tab); }
+    tabs.append(button('Agregar archivo', () => { const name = window.prompt('Nombre del archivo (ejemplo: funciones.py)'); if (!name) return; if (!filenameOK(name) || Object.hasOwn(work.files, name)) { notice('El nombre no es válido o ya existe.', true); return; } work.files[name] = ''; activeFile = name; changed(); }, Object.keys(work.files).length >= 600)); root.append(tabs);
+    const controls = el('div', 'worksheet-toolbar'), locked = !teacher && project.lockedFiles.includes(activeFile);
     controls.append(el('span', '', 'Archivo principal'), select(Object.keys(work.files).map(name => [name, name]), work.entry, 'Archivo principal', name => { work.entry = name; onChange(); }, readonly));
-    controls.append(button('Renombrar archivo', () => { const name = window.prompt('Nuevo nombre .py', activeFile); if (!name || name === activeFile) return; if (!filenameOK(name) || Object.hasOwn(work.files, name)) { notice('Nombre no válido o ya existente.', true); return; } work.files[name] = work.files[activeFile]; delete work.files[activeFile]; if (work.entry === activeFile) work.entry = name; if (teacher) original.lockedFiles = original.lockedFiles.map(item => item === activeFile ? name : item); activeFile = name; changed(); }, locked));
-    controls.append(button('Eliminar archivo', () => { if (!confirm(`¿Eliminar ${activeFile}?`)) return; delete work.files[activeFile]; if (teacher) original.lockedFiles = original.lockedFiles.filter(item => item !== activeFile); if (!Object.hasOwn(work.files, work.entry)) work.entry = Object.keys(work.files)[0]; activeFile = work.entry; changed(); }, locked || Object.keys(work.files).length <= 1));
-    if (teacher) controls.append(button(original.lockedFiles.includes(activeFile) ? 'Desbloquear archivo' : 'Bloquear archivo', () => { original.lockedFiles = original.lockedFiles.includes(activeFile) ? original.lockedFiles.filter(name => name !== activeFile) : [...original.lockedFiles, activeFile]; changed(); }));
-    controls.append(button('Ejecutar ejercicio', () => run([{ label: original.title, payload: { mode: 'files', files: clone(work.files), entry: work.entry } }]), false, false));
+    controls.append(button('Renombrar archivo', () => { const name = window.prompt('Nuevo nombre .py', activeFile); if (!name || name === activeFile) return; if (!filenameOK(name) || Object.hasOwn(work.files, name)) { notice('Nombre no válido o ya existente.', true); return; } work.files[name] = work.files[activeFile]; delete work.files[activeFile]; if (work.entry === activeFile) work.entry = name; if (teacher) project.lockedFiles = project.lockedFiles.map(item => item === activeFile ? name : item); activeFile = name; changed(); }, locked));
+    controls.append(button('Eliminar archivo', () => { if (!confirm(`¿Eliminar ${activeFile}?`)) return; delete work.files[activeFile]; if (teacher) project.lockedFiles = project.lockedFiles.filter(item => item !== activeFile); if (!Object.hasOwn(work.files, work.entry)) work.entry = Object.keys(work.files)[0]; activeFile = work.entry; changed(); }, locked || Object.keys(work.files).length <= 1));
+    if (teacher) controls.append(button(project.lockedFiles.includes(activeFile) ? 'Desbloquear archivo' : 'Bloquear archivo', () => { project.lockedFiles = project.lockedFiles.includes(activeFile) ? project.lockedFiles.filter(name => name !== activeFile) : [...project.lockedFiles, activeFile]; changed(); }));
+    controls.append(button('Ejecutar archivo actual', () => run([{ label: activeFile, payload: { mode: 'files', files: clone(work.files), entry: activeFile } }]), false, false));
+    controls.append(button('Ejecutar principal', () => run([{ label: original.title, payload: { mode: 'files', files: clone(work.files), entry: work.entry } }]), false, false));
     root.append(controls, input(work.files[activeFile], `Código de ${activeFile}`, value => { work.files[activeFile] = value; }, true, locked));
   }
   function render() { root.replaceChildren(); if (activity.kind === 'notebook') notebook(); else exercises(); }

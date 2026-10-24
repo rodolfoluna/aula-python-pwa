@@ -110,6 +110,7 @@ export function createSupabaseStore(env = process.env, { clientFactory = createC
       if (error) throw Object.assign(new Error(error.message), { status: error.code === '40001' ? 409 : error.code === '42501' ? 403 : 500 });
       return Array.isArray(data) ? data[0] : data;
     },
+    async deleteAssignment(id, teacherId) { result(await admin.from('aula_assignments').delete().eq('id', id).eq('teacher_id', teacherId)); },
     async setAssignmentClosed(id, closed) { return result(await admin.from('aula_assignments').update({ closed }).eq('id', id).select().single()); },
     async health() {
       for (const table of ['aula_profiles', 'aula_groups', 'aula_memberships']) result(await admin.from(table).select('*').limit(1));

@@ -116,6 +116,12 @@ export function createActivitiesService(store, clock = () => Date.now()) {
       if (!review) throw denied();
       return { review, assignment };
     },
+    async deleteAssignment(profile, data) {
+      if (profile.role !== 'teacher') throw new AccountError(403, 'Solo el profesor puede eliminar asignaciones.');
+      const assignment = await assigned(profile, data.assignmentId, false);
+      await store.deleteAssignment(assignment.id, profile.id); templates.delete(assignment.id);
+      return { deleted: true };
+    },
     async close(profile, data) { const assignment = await assigned(profile, data.assignmentId); if (profile.role !== 'teacher' || typeof data.closed !== 'boolean') throw new AccountError(403, 'Solo el profesor puede cerrar actividades.'); return store.setAssignmentClosed(assignment.id, data.closed); },
   };
 }

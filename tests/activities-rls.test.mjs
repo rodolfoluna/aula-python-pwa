@@ -12,7 +12,7 @@ test('PostgreSQL: asignaciones, RLS, revisión atómica, plazos y entrega final'
       create table auth.users(id uuid primary key, raw_app_meta_data jsonb, raw_user_meta_data jsonb);
       create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
       grant usage on schema auth, public to authenticated, service_role; grant execute on function auth.uid() to authenticated;`);
-    for (const file of ['202610170001_accounts.sql', '202610170003_activities.sql', '202610170004_reviews.sql', '202610170005_efficient_sync.sql']) await db.exec(await readFile(new URL('../supabase/migrations/' + file, import.meta.url), 'utf8'));
+    for (const file of ['202610170001_accounts.sql', '202610170003_activities.sql', '202610170004_reviews.sql', '202610170005_efficient_sync.sql', '202610240001_assignment_delete.sql']) await db.exec(await readFile(new URL('../supabase/migrations/' + file, import.meta.url), 'utf8'));
     for (const [id, metadata] of [[teacher, { aula_role: 'teacher', aula_name: 'Docente' }], [student, { aula_role: 'student', aula_name: 'Ana', aula_control: '001', aula_teacher_id: teacher }], [stranger, { aula_role: 'student', aula_name: 'Luis', aula_control: '002', aula_teacher_id: teacher }]]) await db.query('insert into auth.users(id,raw_app_meta_data) values($1,$2)', [id, JSON.stringify(metadata)]);
     await db.exec("update aula_profiles set must_change_password = false");
     const groupId = (await db.query("insert into aula_groups(teacher_id,name) values($1,'Grupo A') returning id", [teacher])).rows[0].id;
@@ -83,5 +83,12 @@ test('PostgreSQL: asignaciones, RLS, revisión atómica, plazos y entrega final'
     assert.equal((await patchSave(stranger, 0, { changes: [{ path: [], value: answer }] }, requestId)).rows[0].receipt.revision, 1);
     assert.equal((await db.query("select has_function_privilege('authenticated','aula_patch_answer(uuid,uuid,integer,jsonb,uuid,boolean)','execute') as allowed")).rows[0].allowed, false);
     await assert.rejects(db.query('select aula_progress_summary($1,$2,null)', [assignmentId, stranger]), /sin acceso/);
+    await assert.rejects(asUser(teacher, 'delete from aula_assignments'));
+    await db.exec('set role service_role');
+    await db.query('delete from aula_assignments where id = $1', [assignmentId]);
+    await db.exec('reset role');
+    assert.equal((await db.query('select * from aula_submissions')).rows.length, 0);
+    assert.equal((await db.query('select * from aula_reviews')).rows.length, 0);
+    assert.equal((await db.query('select * from aula_activities')).rows.length, 1);
   } finally { await db.close(); }
 });

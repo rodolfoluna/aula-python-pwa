@@ -20,10 +20,16 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     if (sync) { $('#save-answer').disabled = !opened?.writable || sync.conflict || sync.blocked || !!sync.inFlight; $('#submit-answer').disabled = $('#save-answer').disabled || window.navigator?.onLine === false; }
     document.querySelectorAll('.worksheet-run').forEach(button => { if (button.textContent.includes('Ejecutar')) button.disabled = !!runnerBusy; });
   }
+  function screen(mode) {
+    $('#activities-hub').dataset.screen = mode;
+    $('#activity-progress').hidden = mode !== 'progress';
+    const target = mode === 'work' ? $('#work-title') : mode === 'progress' ? $('#activity-progress h2') : $('#activities-heading');
+    target.tabIndex = -1; target.focus(); target.scrollIntoView?.({ block: 'start' });
+  }
   function teardown() {
     epoch++;
     clearInterval(ticker); clearTimeout(runnerTimer); ticker = null; frame?.remove(); frame = null; queued = null; runnerBusy = false; runnerReady = false;
-    worksheet?.destroy(); worksheet = null; sync = null; opened = null; draft = null; draftDirty = false; reviewDirty = false; reviewedStudent = null; $('#activity-workspace').hidden = true;
+    worksheet?.destroy(); worksheet = null; sync = null; opened = null; draft = null; draftDirty = false; reviewDirty = false; reviewedStudent = null; $('#activity-workspace').hidden = true; screen('catalog');
     for (const id of ['feedback-panel', 'review-form', 'review-history', 'back-current-review']) $('#' + id).hidden = true;
   }
   function canLeave() { if (sync?.inFlight) { notice('Espera a que termine el guardado antes de cambiar de actividad.', true); return false; } if (reviewDirty) return confirm('Hay comentarios o una calificación sin guardar. ¿Salir y descartar esos cambios?'); return !(sync?.dirty || draftDirty) || confirm('Hay cambios sin guardar en el servidor. Se conserva la copia local. ¿Quieres salir de esta actividad?'); }
@@ -54,7 +60,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     if (!canLeave()) return;
     teardown(); draft = clone(activity); cacheKey = 'aula-activity-draft:' + profile.id + ':' + (draft.id || 'new');
     try { const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null'); if (cached && cached.kind === draft.kind && cached.version === draft.version) { draft = { ...cached, ...normalizeActivity(cached) }; draftDirty = true; } } catch {}
-    $('#activity-workspace').hidden = false; $('#teacher-draft-fields').hidden = false; $('#answer-controls').hidden = true; $('#work-readonly').hidden = true;
+    $('#activity-workspace').hidden = false; screen('work'); $('#teacher-draft-fields').hidden = false; $('#answer-controls').hidden = true; $('#work-readonly').hidden = true;
     $('#work-title').textContent = draft.id ? 'Editar plantilla · versión ' + draft.version : 'Crear actividad'; $('#activity-title').value = draft.title; $('#activity-instructions').value = draft.instructions;
     $('#draft-state').textContent = draftDirty ? 'Borrador local recuperado; todavía no está guardado en Supabase.' : 'Guarda antes de asignar a un grupo.';
     $('#work-instructions').replaceChildren(); worksheet = createWorksheet($('#worksheet'), { activity: draft, role: 'teacher', onChange: cacheDraft, run, notice }); startRunner(false); syncControls();
@@ -66,7 +72,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     if (discardLocal) localStorage.removeItem(`aula-answer:${profile.id}:${assignmentId}`);
     teardown(); opened = data; reviewedStudent = studentId;
     const own = profile.role === 'student', ownerId = profile.id, template = data.assignment.snapshot, currentEpoch = epoch;
-    $('#activity-workspace').hidden = false; $('#teacher-draft-fields').hidden = true; $('#answer-controls').hidden = !own;
+    $('#activity-workspace').hidden = false; screen('work'); $('#teacher-draft-fields').hidden = true; $('#answer-controls').hidden = !own;
     $('#work-title').textContent = `${template.title} · versión ${data.assignment.activity_version}${!own && data.student ? ' · ' + data.student.control + ' · ' + data.student.name : ''}`; renderMarkdown($('#work-instructions'), template.instructions);
     $('#work-readonly').hidden = data.writable;
     let answer = data.answer;
@@ -81,7 +87,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
       ticker.unref?.();
     }
     worksheet = createWorksheet($('#worksheet'), { activity: template, answer, role: own ? 'student' : 'review', readonly: !data.writable,
-      onChange: () => sync?.set(answer), run, notice }); startRunner(own); syncControls();
+      onChange: () => sync?.set(answer), run, notice }); startRunner(own); if (own && data.writable && template.kind === 'files') sync.set(answer); syncControls();
     renderFeedback(data, own);
   }
   function renderFeedback(data, own) {
@@ -109,7 +115,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   async function showHistorical(assignmentId, studentId, reviewId) {
     if (!canLeave()) return;
     const { assignment, review } = await api('review-history', { assignmentId, studentId, reviewId });
-    teardown(); $('#activity-workspace').hidden = false; $('#teacher-draft-fields').hidden = true; $('#answer-controls').hidden = true; $('#work-readonly').hidden = false;
+    teardown(); $('#activity-workspace').hidden = false; screen('work'); $('#teacher-draft-fields').hidden = true; $('#answer-controls').hidden = true; $('#work-readonly').hidden = false;
     $('#work-title').textContent = `${assignment.snapshot.title} · Código revisado el ${date(review.created_at)}`;
     renderMarkdown($('#work-instructions'), assignment.snapshot.instructions);
     $('#feedback-panel').hidden = false; $('#feedback-state').textContent = `${review.action === 'return' ? 'Devuelta' : 'Revisada'} · ${review.grade == null ? 'Sin calificación' : Number(review.grade) + '/100'}`;
@@ -134,7 +140,12 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
       const card = element('article', undefined, 'card'), group = getGroups().find(group => group.id === assignment.group_id);
       card.append(element('h3', assignment.title || 'Actividad'), element('p', `${assignment.group?.name || group?.name || 'Mi grupo'} · v${assignment.activity_version} · ${assignment.closed ? 'Cerrada · ' : ''}${answerStatus(assignment.submission)}`, 'muted'), element('p', 'Límite: ' + date(assignment.submission?.returned_at && !assignment.submission?.submitted_at ? assignment.submission.correction_due_at : assignment.due_at), 'muted'));
       if (profile.role === 'student' && assignment.submission?.reviewed_at) card.append(element('p', gradeText(assignment.submission), 'grade-summary'));
-      if (profile.role === 'teacher') card.append(button('Ver avances', () => showProgress(assignment.id)), button(assignment.closed ? 'Reabrir actividad' : 'Cerrar actividad', async () => { await api('assignment-state', { assignmentId: assignment.id, closed: !assignment.closed }); await refresh(); }));
+      if (profile.role === 'teacher') card.append(button('Eliminar asignación', async () => {
+        if (!confirm('¿Eliminar esta asignación del grupo? Se eliminarán sus avances, entregas y revisiones. La plantilla se conserva.')) return;
+        await api('assignment-delete', { assignmentId: assignment.id });
+        if (progressId === assignment.id) { progressId = null; progressTokens.delete(assignment.id); }
+        await refresh(); notice('Asignación eliminada.');
+      }), button('Ver avances', () => showProgress(assignment.id)), button(assignment.closed ? 'Reabrir actividad' : 'Cerrar actividad', async () => { await api('assignment-state', { assignmentId: assignment.id, closed: !assignment.closed }); await refresh(); }));
       else card.append(button(assignment.submission?.submitted_at ? 'Ver mi entrega' : 'Abrir actividad', () => openAnswer(assignment.id)));
       $('#assignments-list').append(card);
     }
@@ -142,6 +153,9 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     syncControls();
   }
   async function showProgress(id, automatic = false) {
+    if (!automatic && !$('#activity-workspace').hidden && !canLeave()) return;
+    if (!automatic && !$('#activity-workspace').hidden) teardown();
+    if (!automatic) screen('progress');
     if (progressId !== id) progressBudget.reset();
     progressId = id;
     if (progressFlights.has(id)) return progressFlights.get(id);
@@ -153,7 +167,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     if (!profile || profile.id !== actorId || progressId !== id) return;
     progressBudget.completed(data.unchanged); if (data.token) progressTokens.set(id, data.token);
     $('#progress-state').textContent = `Última comprobación: ${new Date().toLocaleTimeString('es-MX')}. Actualización automática cada ${progressBudget.delay / 1000} s según cambios; también puedes actualizar ahora.`;
-    $('#activity-progress').hidden = false; if (data.unchanged) return; $('#progress-list').replaceChildren();
+    $('#activity-progress').hidden = $('#activities-hub').dataset.screen !== 'progress'; if (data.unchanged) return; $('#progress-list').replaceChildren();
     for (const student of data.students) { const row = element('div', undefined, 'progress-row'); row.append(element('strong', `${student.control} · ${student.name}`), element('span', `${answerStatus(student.submission)}${student.submission ? ' · ' + date(student.submission.submitted_at || student.submission.updated_at) : ''}${student.submission?.reviewed_at ? ' · ' + gradeText(student.submission) : ''}`), button('Ver último avance', () => openAnswer(id, student.id))); $('#progress-list').append(row); }
     if (!data.students.length) $('#progress-list').append(element('p', 'Este grupo todavía no tiene alumnos.'));
     })();
@@ -168,8 +182,8 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   window.addEventListener('offline', syncControls);
   window.addEventListener('pagehide', () => autoSave(true));
   progressTimer.unref?.();
-  $('#roster-nav').onclick = () => { if (!canLeave()) return; view = 'roster'; $('#teacher-panel').hidden = false; $('#activities-hub').hidden = true; };
-  $('#activities-nav').onclick = () => perform(async () => { view = 'activities'; $('#teacher-panel').hidden = true; $('#activities-hub').hidden = false; await refresh(); });
+  $('#roster-nav').onclick = () => { if (!canLeave()) return; teardown(); view = 'roster'; $('#teacher-panel').hidden = false; $('#activities-hub').hidden = true; };
+  $('#activities-nav').onclick = () => perform(async () => { if (!canLeave()) return; teardown(); view = 'activities'; $('#teacher-panel').hidden = true; $('#activities-hub').hidden = false; await refresh(); });
   $('#refresh-activities').onclick = () => perform(refresh); $('#refresh-progress').onclick = () => perform(() => showProgress(progressId));
   $('#new-notebook-activity').onclick = () => showDraft(newActivity('notebook')); $('#new-files-activity').onclick = () => showDraft(newActivity('files'));
   $('#activity-title').oninput = () => { if (draft) { draft.title = $('#activity-title').value; cacheDraft(); } };
@@ -195,7 +209,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     if (action === 'return' && !confirm('¿Devolver esta entrega para correcciones? El alumno podrá editarla hasta el nuevo plazo.')) return;
     const id = opened.assignment.id, studentId = reviewedStudent;
     await api('answer-review', { assignmentId: id, studentId, revision: opened.revision, action, grade: gradeValue === '' ? null : Number(gradeValue), feedback: $('#review-feedback').value, correctionDueAt: due ? new Date(due).toISOString() : null });
-    reviewDirty = false; await openAnswer(id, studentId, true); await showProgress(id); await refresh(); notice(action === 'return' ? 'Entrega devuelta. El alumno ya puede corregirla dentro de su nuevo plazo.' : 'Calificación y comentarios guardados. El alumno ya puede verlos.');
+    reviewDirty = false; await openAnswer(id, studentId, true); await showProgress(id, true); await refresh(); notice(action === 'return' ? 'Entrega devuelta. El alumno ya puede corregirla dentro de su nuevo plazo.' : 'Calificación y comentarios guardados. El alumno ya puede verlos.');
   }); };
   $('#reload-answer').onclick = () => perform(async () => { if (!opened || !confirm('¿Cargar la versión del servidor? Se descartarán los cambios locales de esta actividad.')) return; await openAnswer(opened.assignment.id, null, true, true); });
   $('#submit-answer').onclick = () => perform(async () => {
@@ -206,7 +220,8 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     catch (error) { worksheet.setReadonly(!opened.writable || sync.blocked); throw error; }
     finally { syncControls(); }
   });
-  $('#close-work').onclick = () => { if (canLeave()) teardown(); };
+  $('#close-work').onclick = () => { if (canLeave()) { const back = reviewedStudent && progressId; teardown(); if (back) screen('progress'); } };
+  $('#close-progress').onclick = () => { progressId = null; screen('catalog'); };
   window.addEventListener('beforeunload', event => { if (sync?.dirty || draftDirty || reviewDirty) { event.preventDefault(); event.returnValue = ''; } });
   for (const eventName of ['copy', 'cut', 'paste', 'drop']) document.addEventListener(eventName, event => { if (profile?.role === 'student' && !profile.must_change_password) event.preventDefault(); }, true);
   document.addEventListener('beforeinput', event => { if (profile?.role === 'student' && !profile.must_change_password && ['insertFromPaste', 'insertFromDrop'].includes(event.inputType)) event.preventDefault(); }, true);

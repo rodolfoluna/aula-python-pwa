@@ -7,8 +7,8 @@ export function text(value, max, label, empty = true) {
   return value;
 }
 function uniqueIds(items) { if (new Set(items.map(item => item.id)).size !== items.length) throw new Error('Hay identificadores de celdas o ejercicios duplicados.'); }
-function files(value, entry) {
-  if (!record(value) || Object.keys(value).length < 1 || Object.keys(value).length > 20) throw new Error('Cada ejercicio necesita entre 1 y 20 archivos.');
+function files(value, entry, limit = 20) {
+  if (!record(value) || Object.keys(value).length < 1 || Object.keys(value).length > limit) throw new Error(`El espacio de trabajo necesita entre 1 y ${limit} archivos.`);
   const result = {};
   for (const [name, code] of Object.entries(value)) { if (!filenameOK(name)) throw new Error('Nombre de archivo Python inválido.'); result[name] = text(code, 100000, 'El código'); }
   if (!Object.hasOwn(result, entry)) throw new Error('El archivo principal no existe.');
@@ -30,14 +30,15 @@ export function normalizeActivity(input) {
     if (!Array.isArray(input.content.exercises) || !input.content.exercises.length || input.content.exercises.length > 30) throw new Error('La actividad necesita entre 1 y 30 ejercicios.');
     const exercises = input.content.exercises.map(item => {
       if (!idOK(item.id)) throw new Error('Identificador de ejercicio inválido.');
-      const fileMap = files(item.files, item.entry);
-      if (!Array.isArray(item.lockedFiles) || item.lockedFiles.some(name => !Object.hasOwn(fileMap, name))) throw new Error('Archivos bloqueados inválidos.');
-      return { id: item.id, title: text(item.title, 160, 'El título de ejercicio', false), prompt: text(item.prompt, 20000, 'El enunciado'), files: fileMap, entry: item.entry, lockedFiles: [...new Set(item.lockedFiles)] };
-    }); uniqueIds(exercises); result.content = { exercises };
+      const fileMap = input.content.project ? null : files(item.files, item.entry);
+      if (!input.content.project && (!Array.isArray(item.lockedFiles) || item.lockedFiles.some(name => !Object.hasOwn(fileMap, name)))) throw new Error('Archivos bloqueados inválidos.');
+      return { id: item.id, title: text(item.title, 160, 'El título de ejercicio', false), prompt: text(item.prompt, 20000, 'El enunciado'), ...(input.content.project ? {} : { files: fileMap, entry: item.entry, lockedFiles: [...new Set(item.lockedFiles)] }) };
+    }); uniqueIds(exercises); result.content = { exercises, ...(input.content.project ? { project: normalizeProject(input.content.project) } : {}) };
   }
   return sizeCheck(result);
 }
 export function initialAnswer(activity) {
+  if (activity.kind === 'files' && activity.content.project) { const { files, entry } = activity.content.project; return { project: { files: clone(files), entry } }; }
   return activity.kind === 'notebook' ? { cells: clone(activity.content.cells) } : { exercises: activity.content.exercises.map(({ id, files, entry }) => ({ id, files: clone(files), entry })) };
 }
 export function validateAnswer(activity, input) {
@@ -63,6 +64,12 @@ export function validateAnswer(activity, input) {
     if (newOrder.some(id => before.get(id) !== after.get(id))) throw new Error('No se puede mover una celda a través de una bloqueada.');
     return sizeCheck({ cells });
   }
+  if (input.project) {
+    const base = projectWorkspace(activity), project = { files: files(input.project.files, input.project.entry, 600), entry: input.project.entry };
+    for (const name of base.lockedFiles) if (project.files[name] !== base.files[name]) throw new Error('No se puede modificar ni eliminar un archivo bloqueado.');
+    return sizeCheck({ project });
+  }
+  if (activity.content.project) throw new Error('Falta el proyecto de la actividad.');
   if (!Array.isArray(input.exercises) || input.exercises.length !== activity.content.exercises.length) throw new Error('Faltan ejercicios en la respuesta.');
   const exercises = activity.content.exercises.map((base, index) => {
     const item = input.exercises[index]; if (!item || item.id !== base.id) throw new Error('No se permite cambiar los ejercicios.');
@@ -77,3 +84,36 @@ export function newActivity(kind = 'notebook') {
 }
 export function newExercise() { return { id: crypto.randomUUID(), title: 'Nuevo ejercicio', prompt: 'Describe aquí el ejercicio.', files: { 'main.py': '# Escribe tu solución\n' }, entry: 'main.py', lockedFiles: [] }; }
 export { clone, createCell, canMove };
+
+function normalizeProject(project) {
+  const fileMap = files(project.files, project.entry, 600);
+  if (!Array.isArray(project.lockedFiles) || project.lockedFiles.some(name => !Object.hasOwn(fileMap, name))) throw new Error('Archivos bloqueados inválidos.');
+  return { files: fileMap, entry: project.entry, lockedFiles: [...new Set(project.lockedFiles)] };
+}
+// Convert legacy exercise workspaces without overwriting files with repeated names.
+export function projectWorkspace(activity, answer) {
+  if (activity.content.project) return { ...clone(activity.content.project), ...(answer?.project ? clone(answer.project) : {}) };
+  const project = { files: {}, entry: '', lockedFiles: [] }, mappings = [];
+  const reserve = (name, index) => {
+    let target = name, suffix = 0;
+    while (Object.hasOwn(project.files, target)) target = `ejercicio_${index + 1}_${++suffix}_${name}`;
+    return target;
+  };
+  activity.content.exercises.forEach((base, index) => {
+    const map = {}; mappings.push(map);
+    for (const [name, code] of Object.entries(base.files)) {
+      const target = reserve(name, index); map[name] = target; project.files[target] = code;
+      if (base.lockedFiles.includes(name)) project.lockedFiles.push(target);
+    }
+    if (!project.entry) project.entry = map[base.entry];
+  });
+  if (answer?.project) return { ...project, ...clone(answer.project) };
+  answer?.exercises?.forEach((work, index) => {
+    const map = mappings[index];
+    for (const name of Object.keys(map)) if (!Object.hasOwn(work.files, name)) delete project.files[map[name]];
+    for (const [name, code] of Object.entries(work.files)) { const target = map[name] || reserve(name, index); project.files[target] = code; map[name] = target; }
+    if (index === 0) project.entry = map[work.entry];
+  });
+  if (!Object.hasOwn(project.files, project.entry)) project.entry = Object.keys(project.files)[0];
+  return project;
+}

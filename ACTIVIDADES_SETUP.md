@@ -124,3 +124,23 @@ El borrador local se separa por cuenta y asignación. Al volver a abrir una resp
 - Las sesiones continúan en memoria del backend local. Falta el despliegue gratuito, el modo instalable PWA y la sincronización de sesiones para un backend distribuido.
 
 Las pruebas `activities*` ejecutan el modelo de permisos, el flujo de interfaz y API, y la migración con PostgreSQL embebido. La prueba `runner.test.mjs` conecta el código real de la consola al motor Python real en Node: verifica el origen de mensajes, variables, `input()`, gráficas y archivos. Estas pruebas no sustituyen una comprobación visual en navegador del aislamiento entre los dos orígenes; el permiso guardado del navegador ha impedido esa verificación en esta sesión.
+
+
+## Proyecto compartido y eliminación de asignaciones (24 de octubre de 2026)
+
+Las actividades de archivos usan un solo proyecto (`content.project` en plantillas y
+`answer.project` en respuestas). Los ejercicios contienen títulos e instrucciones;
+cambiar de ejercicio conserva los archivos y la pestaña visible. El alumno puede
+seleccionar el archivo principal o ejecutar directamente el archivo que está viendo.
+Las plantillas anteriores siguen abriendo y se convierten al guardar en el editor.
+
+El editor y el seguimiento de avances se muestran en vistas separadas del catálogo,
+con un botón para volver. El catálogo docente incluye **Eliminar asignación**.
+La confirmación explica que se borran los avances, entregas y revisiones de ese grupo;
+la actividad/plantilla registrada permanece disponible para futuras asignaciones.
+
+Antes de publicar esta versión, aplicar en Supabase, después de las migraciones
+anteriores, `supabase/migrations/202610240001_assignment_delete.sql`.
+Esta migración configura el borrado en cascada; no borra registros al ejecutarla.
+La API comprueba que la asignación pertenece al profesor autenticado. Las escrituras
+directas de alumnos y profesores continúan bloqueadas por los permisos existentes.

@@ -85,3 +85,36 @@ test('revisión: notas válidas, devolución individual, historial y nueva entre
   await service.close(teacher, { assignmentId: assignment.id, closed: true });
   await assert.rejects(service.review(teacher, { ...data, revision: 5, action: 'return', correctionDueAt }), /Reabre/);
 });
+
+
+test('proyecto compartido se guarda por delta y solo su profesor elimina la asignación', async () => {
+  const { projectWorkspace, normalizeActivity, newExercise } = await import('../dist/activity-model.js');
+  const { answerPatch } = await import('../dist/answer-patch.js');
+  const store = memoryAccountStore();
+  const teacher = await store.createUser({ email: 'project@example.com', password: 'PruebaTemporal123', role: 'teacher', name: 'Docente' });
+  const other = await store.createUser({ email: 'foreign@example.com', password: 'PruebaTemporal123', role: 'teacher', name: 'Otro' });
+  const student = await store.createUser({ email: 'projectstudent@example.com', password: 'PruebaTemporal123', role: 'student', teacherId: teacher.id, control: '010', name: 'Ana' });
+  const group = await store.createGroup(teacher.id, 'A'); await store.setMembership(group.id, student.id, true);
+  const service = createActivitiesService(store), legacy = newActivity('files');
+  legacy.content.exercises.push(newExercise());
+  legacy.content.exercises[0].files['base.py'] = 'VALUE = 42'; legacy.content.exercises[0].lockedFiles.push('base.py');
+  const draft = await service.saveActivity(teacher, legacy);
+  const [assignment] = await service.assign(teacher, { activityId: draft.id, version: 1, groupIds: [group.id] });
+  const before = initialAnswer(legacy);
+  await service.saveAnswer(student, { assignmentId: assignment.id, revision: 0, answer: before, submit: false });
+  const workspace = projectWorkspace(legacy, before), after = { project: { files: workspace.files, entry: workspace.entry } };
+  after.project.files['main.py'] = 'from base import VALUE';
+  await service.saveAnswer(student, { assignmentId: assignment.id, revision: 1, patch: answerPatch(before, after), requestId: crypto.randomUUID(), submit: false });
+  assert.deepEqual((await service.open(student, assignment.id)).answer, after);
+  const bad = structuredClone(after); delete bad.project.files['base.py'];
+  assert.throws(() => validateAnswer(legacy, bad), /bloqueado/);
+  const sharedTemplate = normalizeActivity({ ...legacy, content: { exercises: legacy.content.exercises, project: projectWorkspace(legacy) } });
+  assert.equal(sharedTemplate.content.exercises[0].files, undefined);
+  assert.doesNotThrow(() => validateAnswer(sharedTemplate, initialAnswer(sharedTemplate)));
+  await assert.rejects(service.deleteAssignment(student, { assignmentId: assignment.id }), /profesor/);
+  await assert.rejects(service.deleteAssignment(other, { assignmentId: assignment.id }), /acceso/);
+  await service.deleteAssignment(teacher, { assignmentId: assignment.id });
+  await assert.rejects(service.open(student, assignment.id), /acceso/);
+  assert.equal((await store.listActivities(teacher.id)).length, 1);
+  assert.equal(await store.submission(assignment.id, student.id), undefined);
+});
