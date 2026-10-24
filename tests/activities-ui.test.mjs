@@ -12,10 +12,10 @@ async function waitFor(predicate, label) { const start = Date.now(); while (!pre
 test('editor de ejercicios conserva archivos y respuestas al navegar; bloquea ejemplos', () => {
   const dom = new JSDOM('<div id="root"></div>'); globalThis.document = dom.window.document; globalThis.window = dom.window;
   const activity = newActivity('files'); activity.content.exercises[0].files['ejemplo.py'] = 'VALOR=42'; activity.content.exercises[0].lockedFiles = ['ejemplo.py'];
-  const root = document.querySelector('#root'); let executed; let changes = 0, nextFilename = 'funciones.py'; window.prompt = () => nextFilename;
+  const root = document.querySelector('#root'); let executed; let changes = 0; window.prompt = () => { throw new Error('prompt no disponible'); };
   createWorksheet(root, { activity, role: 'teacher', onChange: () => changes++ });
   const find = text => [...root.querySelectorAll('button')].find(button => button.textContent === text);
-  find('Agregar archivo').click(); assert.equal(Object.hasOwn(activity.content.project.files, 'funciones.py'), true);
+  find('Agregar archivo').click(); root.querySelector('[aria-label="Nombre del archivo Python"]').value = 'funciones.py'; find('Aceptar nombre').click(); assert.equal(Object.hasOwn(activity.content.project.files, 'funciones.py'), true);
   find('Agregar ejercicio').click(); assert.equal(activity.content.exercises.length, 2);
   find('← Anterior').click(); assert.equal(root.querySelectorAll('.worksheet-code').length >= 1, true);
   const answer = initialAnswer(activity); const student = createWorksheet(root, { activity, answer, role: 'student', onChange: () => changes++, run: items => { executed = items; } });
@@ -24,8 +24,14 @@ test('editor de ejercicios conserva archivos y respuestas al navegar; bloquea ej
   [...root.querySelectorAll('button')].find(button => button.textContent === 'main.py').click(); const code = root.querySelector('[aria-label="Código de main.py"]'); code.value = 'print(99)'; code.dispatchEvent(new dom.window.Event('input'));
   find('Siguiente →').click();
   assert.equal(root.querySelector('[aria-label="Código de main.py"]').value, 'print(99)');
-  find('funciones.py').click(); find('Ejecutar archivo actual').click();
-  assert.equal(executed[0].payload.entry, 'funciones.py');
+  find('funciones.py').click(); find('Renombrar archivo').click();
+  root.querySelector('[aria-label="Nombre del archivo Python"]').value = 'modulo.py'; find('Aceptar nombre').click();
+  assert.equal(Object.hasOwn(answer.project.files, 'funciones.py'), false);
+  assert.equal(Object.hasOwn(answer.project.files, 'modulo.py'), true);
+  find('Agregar archivo').click(); find('Cancelar nombre').click();
+  assert.equal(root.querySelector('.worksheet-filename-form'), null);
+  find('Ejecutar archivo actual').click();
+  assert.equal(executed[0].payload.entry, 'modulo.py');
   assert.equal(executed[0].payload.files['main.py'], 'print(99)');
   find('Ejecutar principal').click(); assert.equal(executed[0].payload.entry, 'main.py');
   find('main.py').click(); find('← Anterior').click(); assert.equal(root.querySelector('[aria-label="Código de main.py"]').value, 'print(99)');
