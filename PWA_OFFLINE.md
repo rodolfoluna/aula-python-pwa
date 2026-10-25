@@ -8,7 +8,8 @@ La aplicación de cuentas y actividades en https://aula-python.onrender.com/ ya 
 2. Pulsa **Instalar app** y acepta la instalación en el navegador. Si no aparece el aviso automático, usa el menú **Instalar** o **Añadir a pantalla de inicio**; en Safari está en Compartir.
 3. Entra como **alumno**, cambia la contraseña temporal si corresponde y pulsa **Preparar sin conexión** en su equipo personal.
 4. Mantén la app abierta hasta que confirme la preparación completa de actividades, Python y Matplotlib. La primera descarga incluye 18 archivos; requiere espacio libre y puede tardar. Si se interrumpe, reintenta: se reutilizan los archivos completos.
-5. Repite la preparación cuando el profesor asigne actividades nuevas. Instalar la app por sí solo no descarga las actividades ni Python.
+5. No cierres sesión antes de trabajar sin conexión: cerrar sesión retira el acceso a las actividades preparadas. Puedes cerrar la ventana y volver a abrir la app.
+6. Repite la preparación cuando el profesor asigne actividades nuevas. Instalar la app por sí solo no descarga las actividades ni Python.
 
 El profesor puede instalar la app. La administración, los avances de otros alumnos, las revisiones y las calificaciones requieren conexión.
 
@@ -21,6 +22,19 @@ El código se conserva en el dispositivo al editar. **Guardar ahora** sin Intern
 Al recuperar Internet con la app abierta se sincronizan también los avances de actividades que ya cerraste en el editor. Si cerraste la app, vuelve a abrirla para sincronizar. Hay un botón **Sincronizar pendientes** y reintentos mientras la app permanece abierta; no se promete sincronización en segundo plano con la app cerrada. Si Render reinició o venció la sesión, inicia sesión de nuevo con la misma cuenta.
 
 **Entregar actividad requiere Internet.** El servidor comprueba la pertenencia al grupo, el alumno, la revisión, los bloqueos y la fecha límite en cada guardado. Si el profesor cerró la actividad o hay cambios de otra sesión, se conserva la copia local y se avisa. Abrir la actividad permite consultar esa copia pendiente; cargar la versión del servidor exige conexión y una confirmación explícita para descartarla. No se fusionan cambios incompatibles automáticamente.
+
+## Velocidad de ejecución
+
+Python se ejecuta en el dispositivo, no en Render. La primera ejecución necesita
+iniciar el motor; las siguientes reutilizan el motor de la actividad abierta.
+Matplotlib se carga cuando el código o un archivo del proyecto lo utiliza, por lo
+que un ejercicio de `print()` o `input()` no espera la preparación de gráficas.
+La primera gráfica puede tardar más, incluso sin conexión: leer los archivos ya
+descargados y cargar la biblioteca en memoria sigue requiriendo trabajo local.
+
+La preparación sin conexión sigue descargando Python, Matplotlib y todas sus
+dependencias. Solo se confirma la preparación completa después de terminar esa
+descarga. Instalar y preparar son pasos distintos.
 
 ## Datos locales y actualizaciones
 
@@ -36,4 +50,4 @@ Las actualizaciones de la interfaz esperan a que cierres las ventanas anteriores
 
 `npm run accounts` y `npm run start:production` generan automáticamente iconos y el manifiesto versionado de archivos públicos. `npm run build:pwa` hace solo esa compilación. `npm run build:runner` prepara la consola estática y versiona su caché. `node scripts/prepare-runtime.mjs` regenera el inventario fijado de Python desde la dependencia de desarrollo Pyodide 0.27.7; se debe revisar y confirmar antes de cambiar versiones.
 
-`npm test` incluye IndexedDB, reinicio offline del DOM, conservación al salir, aislamiento entre alumnos, sincronización de varias actividades, conflictos, recibos perdidos y comprobación de integridad del runtime, además de las pruebas de cuentas, PostgreSQL y Python real. La instalación del sistema y una desconexión física deben comprobarse en el navegador de destino.
+`npm test` incluye IndexedDB, reinicio offline del DOM, conservación al salir, aislamiento entre alumnos, sincronización de varias actividades, conflictos, recibos perdidos y comprobación de integridad del runtime, además de las pruebas de cuentas, PostgreSQL y Python real. Las pruebas incluyen además reinicio del motor real con acceso de red bloqueado, archivos auxiliares, input y PNG. La instalación del sistema y una desconexión física deben comprobarse en el navegador de destino.

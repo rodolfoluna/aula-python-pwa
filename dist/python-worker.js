@@ -1,6 +1,6 @@
 // Pinned runtime. No application credentials are ever sent to this worker.
 const CDN = 'https://cdn.jsdelivr.net/pyodide/v0.27.7/full/';
-let py, notebook, interrupt, control, inputBytes, activeId;
+let py, notebook, interrupt, control, inputBytes, activeId, plotsReady = false;
 let outputBytes = 0;
 const send = (type, data = {}) => postMessage({ type, id: activeId, ...data });
 function emitText(channel, text) {
@@ -34,7 +34,12 @@ async function initialize(data) {
     return new TextDecoder().decode(inputBytes.slice(0, Atomics.load(control, 1)));
   }, isatty: true });
   py.registerJsModule('aula_bridge', { figure: data => send('figure', { data }) });
-  send('status', { text: 'Preparando gráficas (Matplotlib)…' });
+  notebook = py.runPython("{'__name__': '__main__'}");
+  send('ready');
+}
+
+async function initializePlots() {
+  send('status', { text: 'Preparando gráficas (Matplotlib)…', loading: true });
   await py.loadPackage('matplotlib', {
     messageCallback: text => send('diagnostic', { channel: 'info', text }),
     errorCallback: text => send('diagnostic', { channel: 'warning', text }),
@@ -57,15 +62,19 @@ def _aula_show(*args, **kwargs):
 
 _aula_plt.show = _aula_show
 `);
-  notebook = py.runPython("{'__name__': '__main__'}");
-  send('ready');
+  plotsReady = true;
+  send('status', { text: 'Ejecutando Python…', loading: false });
 }
 
 async function execute(data) {
-  activeId = data.id;
   outputBytes = 0;
   let temporary;
   try {
+    // Inspect every project file, including helper modules imported by the entry point.
+    // Basic exercises do not need to download or import the plotting stack.
+    const sources = data.mode === 'files' ? Object.values(data.files) : [data.code];
+    if (!plotsReady && sources.some(code => /\b(?:matplotlib|pylab)\b/.test(code))) await initializePlots();
+    activeId = data.id;
     if (data.mode === 'files') {
       const path = '/aula_project';
       // Remove bytecode and old files so imports always use the current editor text.
@@ -94,14 +103,15 @@ _importlib.invalidate_caches()
       py.runPython(data.code, { globals: notebook, filename: data.filename || '<exec>' });
     }
     // Also display figures created without an explicit show().
-    py.runPython('_aula_show()');
+    if (plotsReady) py.runPython('_aula_show()');
     send('done', { ok: true });
   } catch (error) {
+    activeId = data.id;
     send('text', { channel: 'stderr', text: String(error.message || error) + '\n' });
     send('done', { ok: false });
   } finally {
     temporary?.destroy();
-    try { py.runPython("_aula_plt.close('all')"); } catch {}
+    if (plotsReady) { try { py.runPython("_aula_plt.close('all')"); } catch {} }
     activeId = undefined;
   }
 }

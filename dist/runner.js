@@ -24,7 +24,7 @@ async function initialize() {
   let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); loaded = { promise, resolve, reject };
   worker = new Worker('/python-worker.js', { type: 'module' });
   worker.onmessage = ({ data }) => {
-    if (data.type === 'status') status(data.text);
+    if (data.type === 'status') { status(data.text); if (data.loading === true) clearTimeout(timeout); else if (data.loading === false && busy) timer(); }
     if (data.type === 'diagnostic') $('#diagnostics').textContent += data.text + '\n';
     if (data.type === 'ready') loaded.resolve();
     if (data.type === 'text') append(data.channel, data.text);

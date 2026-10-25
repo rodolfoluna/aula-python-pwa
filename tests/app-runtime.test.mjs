@@ -44,7 +44,7 @@ test('aplicación real en DOM de Node con worker Python real, sin navegador', { 
     await t.test('segunda celda sola: conserva traceback y aviso de error después de terminar', async () => {
       await run('[aria-label="Ejecutar celda 2"]');
       assert.match($('[aria-label="Salida celda 2"]').textContent, /NameError/);
-      assert.match($('#runtime-log').textContent, /Loading.*matplotlib/i);
+      assert.doesNotMatch($('#runtime-log').textContent, /Loading.*matplotlib/i);
       assert.doesNotMatch($('[aria-label="Salida celda 2"]').textContent, /Loading|building the font cache/i);
       await new Promise(resolve => setTimeout(resolve, 200));
       assert.match($('[aria-label="Salida celda 2"]').textContent, /NameError/);
@@ -79,6 +79,7 @@ test('aplicación real en DOM de Node con worker Python real, sin navegador', { 
       await waitFor(() => $('#stop').disabled, 'La gráfica no terminó');
       assert.match($('[aria-label="Salida celda 3"]').textContent, /José 🐍.*15\.8/);
       assert.match($('[aria-label="Salida celda 4"] img').src, /^data:image\/png;base64,iVBOR/);
+      assert.match($('#runtime-log').textContent, /Loading.*matplotlib/i);
       assert.doesNotMatch($('[aria-label="Salida celda 4"]').textContent, /Loading|building the font cache/i);
       assert.equal($('[aria-label="Código celda 1"]').readOnly, true);
     });

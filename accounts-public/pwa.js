@@ -96,8 +96,9 @@ export function setupPwa({ workspace, api, getProfile, getRunnerOrigin, current,
       const catalog = await api('activities', undefined, { networkOnly: true }), groups = await api('my-groups', undefined, { networkOnly: true }), opened = [];
       for (const assignment of catalog.assignments) opened.push(await api('activity-open', { assignmentId: assignment.id }, { networkOnly: true }));
       if (getProfile()?.id !== profile.id) throw new Error('La sesión cambió durante la preparación.');
-      await workspace.prepare(profile, status, catalog, groups, opened);
       await preparePython();
+      if (getProfile()?.id !== profile.id) throw new Error('La sesión cambió durante la preparación.');
+      await workspace.prepare(profile, status, catalog, groups, opened);
       await navigator.storage?.persist?.().catch(() => false);
       detail = `Listo: ${opened.length} actividad(es), Python y Matplotlib disponibles sin conexión. Los avances se sincronizan al volver Internet con la app abierta. La entrega final requiere conexión.`;
     } catch (error) { detail = `Preparación incompleta: ${error.message} Reintenta con Internet antes de trabajar sin conexión.`; throw error; }
@@ -110,7 +111,7 @@ export function setupPwa({ workspace, api, getProfile, getRunnerOrigin, current,
     render();
   };
   window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); prompt = event; });
-  window.addEventListener('appinstalled', () => { detail = 'Aula Python está instalada.'; render(); });
+  window.addEventListener('appinstalled', () => { detail = 'Aula Python está instalada. Entra como alumno y pulsa «Preparar sin conexión» para descargar tus actividades y Python.'; render(); });
   window.addEventListener('offline', () => { workspace.offline = true; workspace.needsIdentity = true; detail = ''; render(); });
   window.addEventListener('online', () => { detail = ''; resume(true); render(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) resume(); });

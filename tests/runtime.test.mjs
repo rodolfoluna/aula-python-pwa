@@ -34,6 +34,7 @@ test('motor real: variables, input Unicode, PNG, módulos actualizados y detenci
   try {
     const loaded = waitFor(data => data.type === 'ready');
     worker.postMessage({ type: 'init', input, interrupt: interrupt.buffer }); await loaded;
+    assert.equal(messages.some(m => m.type === 'status' && /Matplotlib/.test(m.text)), false, 'El inicio básico no debe cargar gráficas');
     await t.test('comparte variables y objetos entre celdas', async () => {
       assert.equal((await run({ code: 'numeros = [10, 20]\nclass Alumno:\n    nombre = "Ana"\nalumno = Alumno()' })).ok, true);
       const result = await run({ code: 'numeros.append(30)\nprint(sum(numeros), alumno.nombre)' });
@@ -42,6 +43,14 @@ test('motor real: variables, input Unicode, PNG, módulos actualizados y detenci
     await t.test('input espera y reanuda con Unicode y líneas vacías', async () => {
       const result = await run({ code: 'nombre = input("Nombre: ")\nvacio = input("Vacío: ")\nprint(repr(nombre), repr(vacio))' }, ['José 🐍', '']);
       assert.equal(result.ok, true); assert.match(result.text, /José 🐍/); assert.match(result.text, /''/);
+    });
+    await t.test('gráficas se cargan al necesitarlas desde un módulo del proyecto', async () => {
+      const result = await run({ mode: 'files', entry: 'main.py', files: {
+        'main.py': 'import grafica', 'grafica.py': 'import matplotlib.pyplot as plt\nplt.plot([1,2],[3,4])'
+      } });
+      assert.equal(result.ok, true, result.text); assert.equal(result.figures.length, 1);
+      assert.equal(messages.some(m => m.type === 'status' && m.loading === true), true);
+      assert.equal(messages.some(m => m.type === 'status' && m.loading === false), true);
     });
     await t.test('Matplotlib genera una imagen PNG real', async () => {
       const result = await run({ code: 'import matplotlib.pyplot as plt\nplt.plot([1, 2, 3], [2, 4, 1])\nplt.show()' });
@@ -72,5 +81,32 @@ test('motor real: variables, input Unicode, PNG, módulos actualizados y detenci
       assert.equal(result.ok, false);
       assert.match((await run({ code: 'print("entrada recuperada")' })).text, /entrada recuperada/);
     });
+  } finally { await worker.terminate(); }
+});
+
+
+test('Python preparado reinicia y ejecuta archivos, input y gráficas sin acceso a red', { timeout: 90000 }, async () => {
+  // The preceding real-runtime test populated the package cache, as preparation does.
+  const worker = new Worker(new URL('./worker-adapter.mjs', import.meta.url), { workerData: { offline: true } });
+  const input = new SharedArrayBuffer(65544), interrupt = new SharedArrayBuffer(1), control = new Int32Array(input, 0, 2), bytes = new Uint8Array(input, 8);
+  const messages = []; let waiter;
+  worker.on('message', data => {
+    messages.push(data);
+    if (data.type === 'input') { const value = new TextEncoder().encode('Ana'); bytes.set(value); Atomics.store(control, 1, value.length); Atomics.store(control, 0, 1); Atomics.notify(control, 0); }
+    if (data.type === 'fatal') waiter?.reject(new Error(data.text));
+    if (data.type === waiter?.type) { const current = waiter; waiter = null; current.resolve(data); }
+  });
+  worker.on('error', error => waiter?.reject(error));
+  const wait = type => new Promise((resolve, reject) => { waiter = { type, resolve, reject }; });
+  try {
+    const ready = wait('ready'); worker.postMessage({ type: 'init', input, interrupt }); await ready;
+    const done = wait('done'); worker.postMessage({ type: 'run', id: 1, mode: 'files', entry: 'main.py', files: {
+      'main.py': 'from auxiliar import valor\nnombre=input("Nombre: ")\nprint(nombre, valor)\nimport matplotlib.pyplot as plt\nplt.plot([1,2],[3,4])\nplt.show()',
+      'auxiliar.py': 'valor=42'
+    } });
+    assert.equal((await done).ok, true, messages.filter(m => m.type === 'text').map(m => m.text).join(''));
+    assert.match(messages.filter(m => m.type === 'text').map(m => m.text).join(''), /Ana 42/);
+    assert.equal(messages.filter(m => m.type === 'figure').length, 1);
+    assert.equal(messages.filter(m => m.type === 'network-attempt').length, 0);
   } finally { await worker.terminate(); }
 });
