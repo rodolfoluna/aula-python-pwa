@@ -77,7 +77,7 @@ export function createWorksheet(root, options) {
     const original = originals[exerciseIndex], work = teacher ? project : answer.project;
     if (!Object.hasOwn(work.files, activeFile)) activeFile = work.entry;
     const nav = el('div', 'worksheet-toolbar');
-    nav.append(button('← Anterior', () => { exerciseIndex--; render(); }, exerciseIndex === 0, false), select(originals.map((item, index) => [String(index), `${index + 1}. ${item.title}`]), String(exerciseIndex), 'Ejercicio actual', value => { exerciseIndex = Number(value); render(); }), button('Siguiente →', () => { exerciseIndex++; render(); }, exerciseIndex === originals.length - 1, false));
+    nav.append(button('← Anterior', () => { exerciseIndex--; render(); }, exerciseIndex === 0, false), select(originals.map((item, index) => [String(index), item.title]), String(exerciseIndex), 'Ejercicio actual', value => { exerciseIndex = Number(value); render(); }), button('Siguiente →', () => { exerciseIndex++; render(); }, exerciseIndex === originals.length - 1, false));
     if (teacher) nav.append(button('Agregar ejercicio', () => { const { id, title, prompt } = newExercise(); originals.push({ id, title, prompt }); exerciseIndex = originals.length - 1; changed(); }, originals.length >= 30), button('Eliminar ejercicio', () => { if (confirm('¿Eliminar este ejercicio del borrador?')) { originals.splice(exerciseIndex, 1); changed(); } }, originals.length <= 1));
     root.append(el('p', 'muted', 'Proyecto compartido: todos los ejercicios usan estos mismos archivos.'), nav);
     const prompt = el('div', 'activity-markdown'); renderMarkdown(prompt, original.prompt);
