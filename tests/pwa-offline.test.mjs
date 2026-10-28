@@ -85,19 +85,22 @@ test('recibo perdido se reconoce al reconectar y no duplica la escritura', async
 });
 
 async function workerHarness(file, assets) {
-  const handlers = {}, stores = new Map(), network = [];
+  const handlers = {}, stores = new Map(), network = []; let updates = 0;
   const caches = { keys: async () => [...stores.keys()], delete: async k => stores.delete(k), open: async name => {
     if (!stores.has(name)) stores.set(name, new Map()); const map = stores.get(name);
     return { addAll: async paths => { for (const path of paths) map.set(typeof path === 'string' ? path : path.url, new Response('public', { headers: { 'Cross-Origin-Embedder-Policy': 'require-corp' } })); }, match: async key => map.get(key)?.clone(), put: async (key, value) => map.set(key, value.clone()) };
   } };
-  const context = { self: { location: { origin: 'https://app.test' }, clients: { claim: async () => {} }, AULA_SHELL: { version: 'test', assets: ['/', '/app.js'] }, addEventListener: (name, callback) => handlers[name] = callback }, caches, URL, Request: class { constructor(url) { this.url = url; } }, Response, Uint8Array, crypto: webcrypto,
+  const context = { self: { skipWaiting: async () => { updates++; }, location: { origin: 'https://app.test' }, clients: { claim: async () => {} }, AULA_SHELL: { version: 'test', assets: ['/', '/app.js'] }, addEventListener: (name, callback) => handlers[name] = callback }, caches, URL, Request: class { constructor(url) { this.url = url; } }, Response, Uint8Array, crypto: webcrypto,
     importScripts() {}, fetch: async (url, options) => { network.push({ url, options }); if (assets?.[url]) return new Response(assets[url]); throw new TypeError('Offline'); } };
   vm.runInNewContext(await readFile(new URL('../' + file, import.meta.url), 'utf8'), context);
   const event = async (name, data = {}) => { let promise; handlers[name]({ ...data, waitUntil: p => promise = p, respondWith: p => promise = p }); return await promise; };
-  return { event, stores, caches, network };
+  return { event, stores, caches, network, updates: () => updates };
 }
 test('service worker guarda solo interfaz pública, conserva aislamiento y no intercepta API', async () => {
-  const worker = await workerHarness('accounts-public/sw.js'); await worker.event('install'); await worker.event('activate');
+  const worker = await workerHarness('accounts-public/sw.js'); await worker.event('install'); assert.equal(worker.updates(), 0);
+  await worker.event('message', { data: { type: 'unrelated' } }); assert.equal(worker.updates(), 0);
+  await worker.event('message', { data: { type: 'activate-update' } }); assert.equal(worker.updates(), 1);
+  await worker.event('activate');
   const response = await worker.event('fetch', { request: { method: 'GET', url: 'https://app.test/', mode: 'navigate' } });
   assert.equal(response.headers.get('cross-origin-embedder-policy'), 'require-corp');
   assert.equal(await worker.event('fetch', { request: { method: 'GET', url: 'https://app.test/api/me' } }), undefined);

@@ -6,6 +6,9 @@ self.addEventListener('install', event => event.waitUntil((async () => {
   await cache.addAll(self.AULA_SHELL.assets.map(path => new Request(path, { cache: 'reload', credentials: 'omit' })));
   // Se activa al cerrar las pestañas anteriores: no recarga ediciones abiertas.
 })()));
+self.addEventListener('message', event => {
+  if (event.data?.type === 'activate-update') event.waitUntil(self.skipWaiting());
+});
 self.addEventListener('activate', event => event.waitUntil((async () => {
   for (const key of await caches.keys()) if (key.startsWith('aula-shell-') && key !== CACHE) await caches.delete(key);
   await self.clients.claim();

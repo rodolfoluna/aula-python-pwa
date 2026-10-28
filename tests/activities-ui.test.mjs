@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { createWorksheet } from '../accounts-public/worksheet.js';
-import { newActivity, initialAnswer } from '../dist/activity-model.js';
+import { newActivity, initialAnswer, normalizeActivity } from '../dist/activity-model.js';
 import { memoryAccountStore } from './helpers/account-store.mjs';
 import { createAccountsServer } from '../accounts/server.mjs';
 const html = await readFile(new URL('../accounts-public/index.html', import.meta.url), 'utf8');
@@ -36,6 +36,30 @@ test('editor de ejercicios conserva archivos y respuestas al navegar; bloquea ej
   find('Ejecutar principal').click(); assert.equal(executed[0].payload.entry, 'main.py');
   find('main.py').click(); find('← Anterior').click(); assert.equal(root.querySelector('[aria-label="Código de main.py"]').value, 'print(99)');
   student.setReadonly(true); root.querySelectorAll('button').forEach(button => { button.disabled = false; }); student.syncControls(); assert.equal(find('Agregar archivo').disabled, true); assert.ok(changes >= 3); dom.window.close();
+});
+
+test('profesor vuelve a editar una plantilla guardada con archivos compartidos y sin archivos por ejercicio', () => {
+  const dom = new JSDOM('<div id="root"></div>'); Object.assign(globalThis, { document: dom.window.document, window: dom.window });
+  try {
+    const root = document.querySelector('#root'), draft = newActivity('files');
+    draft.content.exercises[0].title = '1. Ejercicio con título';
+    draft.content.exercises[0].files['utilidades.py'] = 'VALOR = 42';
+    draft.content.exercises[0].lockedFiles = ['utilidades.py'];
+    createWorksheet(root, { activity: draft, role: 'teacher' }).destroy();
+    const saved = JSON.parse(JSON.stringify(normalizeActivity(draft)));
+    assert.equal(saved.content.exercises[0].files, undefined);
+    assert.ok(saved.content.project.files);
+    const reopened = createWorksheet(root, { activity: saved, role: 'teacher' });
+    assert.equal(root.querySelector('[aria-label="Ejercicio actual"]').selectedOptions[0].textContent, '1. Ejercicio con título');
+    assert.equal(root.querySelector('[aria-label="Código de main.py"]').value, '# Escribe tu solución\n');
+    const field = root.querySelector('[aria-label="Título del ejercicio"]'); field.value = 'Título editado'; field.dispatchEvent(new dom.window.Event('input'));
+    const secondSave = normalizeActivity(saved);
+    assert.equal(secondSave.content.exercises[0].title, 'Título editado');
+    assert.deepEqual(secondSave.content.project.files, draft.content.project.files);
+    assert.deepEqual(secondSave.content.project.lockedFiles, ['utilidades.py']);
+    reopened.destroy(); createWorksheet(root, { activity: secondSave, role: 'teacher' });
+    assert.equal(root.querySelector('[aria-label="Título del ejercicio"]').value, 'Título editado');
+  } finally { dom.window.close(); }
 });
 
 test('interfaz + API: profesor crea/asigna y alumno guarda/entrega; profesor revisa antes de entregar', { timeout: 60000 }, async () => {

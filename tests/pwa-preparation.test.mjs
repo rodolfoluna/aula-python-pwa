@@ -29,3 +29,25 @@ for (const succeeds of [false, true]) test(`preparación offline solo se confirm
     else{await assert.rejects(pending,/Descarga interrumpida/);assert.equal(committed,0);assert.match(document.querySelector('#pwa-status').textContent,/Preparación incompleta/);}
   } finally {clearInterval(fakeTimer);globalThis.setInterval=originalInterval;globalThis.indexedDB=previousIndexedDB;dom.window.close();Object.defineProperty(globalThis,'navigator',{value:previousNavigator,configurable:true});}
 });
+
+
+test('actualización PWA espera permiso de salida y conserva los borradores locales', async () => {
+  const dom = new JSDOM('<button id="prepare-offline"></button><button id="sync-offline"></button><button id="install-app"></button><button id="update-app" hidden></button><p id="pwa-status"></p>', { url: 'https://aula.test' });
+  const previousNavigator = globalThis.navigator, previousIndexedDB = globalThis.indexedDB;
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, location: dom.window.location, localStorage: dom.window.localStorage, indexedDB: new IDBFactory() });
+  const messages = [], listeners = {}; let canLeave = false, action;
+  const registration = { waiting: { postMessage: message => messages.push(message) }, addEventListener() {} };
+  Object.defineProperty(dom.window.navigator, 'serviceWorker', { value: { register: async () => registration, ready: Promise.resolve(registration), addEventListener: (name, callback) => { listeners[name] = callback; } } });
+  Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
+  localStorage.setItem('aula-activity-draft:teacher:one', 'borrador conservado');
+  try {
+    setupPwa({ workspace: { enabled: () => false }, getProfile: () => ({ role: 'teacher' }), getRunnerOrigin: () => 'https://runner.test', canReload: () => canLeave, perform: fn => { action = fn(); } });
+    await new Promise(resolve => setImmediate(resolve));
+    const update = document.querySelector('#update-app'); assert.equal(update.hidden, false);
+    update.click(); await action; assert.equal(messages.length, 0);
+    canLeave = true; update.click(); await action;
+    assert.deepEqual(messages, [{ type: 'activate-update' }]);
+    assert.equal(localStorage.getItem('aula-activity-draft:teacher:one'), 'borrador conservado');
+    assert.equal(typeof listeners.controllerchange, 'function');
+  } finally { dom.window.close(); globalThis.indexedDB = previousIndexedDB; Object.defineProperty(globalThis, 'navigator', { value: previousNavigator, configurable: true }); }
+});

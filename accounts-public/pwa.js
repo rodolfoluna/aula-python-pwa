@@ -42,12 +42,13 @@ export async function syncPending({ profile, storage, api, current = () => null 
   return { saved, held };
 }
 
-export function setupPwa({ workspace, api, getProfile, getRunnerOrigin, current, perform }) {
+export function setupPwa({ workspace, api, getProfile, getRunnerOrigin, current, canReload = () => true, perform }) {
   const $ = id => document.getElementById(id);
   if (!$('pwa-status')) return { render() {}, resume() {}, wait: async () => {} };
-  let prompt, job, preparing = false, detail = '', worker, nextAttempt = 0;
+  let prompt, job, preparing = false, detail = '', worker, nextAttempt = 0, registration, reloadAfterUpdate = false;
   const supported = !!navigator.serviceWorker && !!globalThis.indexedDB;
   function render() {
+    if ($('update-app')) { $('update-app').hidden = !registration?.waiting; $('update-app').disabled = preparing || reloadAfterUpdate; }
     const profile = getProfile(), offline = navigator.onLine === false || workspace.offline;
     $('prepare-offline').hidden = profile?.role !== 'student' || profile.must_change_password;
     $('prepare-offline').disabled = preparing || navigator.onLine === false;
@@ -116,7 +117,24 @@ export function setupPwa({ workspace, api, getProfile, getRunnerOrigin, current,
   window.addEventListener('online', () => { detail = ''; resume(true); render(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) resume(); });
   const timer = setInterval(() => { render(); if (!document.hidden) resume(); }, 60000); timer.unref?.();
-  worker = supported ? navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then(() => navigator.serviceWorker.ready) : Promise.reject(new Error('Service Worker no disponible.'));
+  if ($('update-app')) $('update-app').onclick = () => perform(async () => {
+    await job;
+    if (!registration?.waiting || !canReload()) return;
+    reloadAfterUpdate = true; render();
+    registration.waiting.postMessage({ type: 'activate-update' });
+  });
+  navigator.serviceWorker?.addEventListener?.('controllerchange', () => {
+    if (reloadAfterUpdate) { reloadAfterUpdate = false; location.reload(); }
+  });
+  worker = supported ? navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then(value => {
+    registration = value;
+    const watchInstalling = () => {
+      const installing = registration.installing;
+      installing?.addEventListener('statechange', () => { if (installing.state === 'installed') render(); });
+    };
+    registration.addEventListener?.('updatefound', watchInstalling); watchInstalling();
+    render(); return navigator.serviceWorker.ready;
+  }) : Promise.reject(new Error('Service Worker no disponible.'));
   worker.catch(() => { detail = 'La preparación sin conexión no está disponible en este navegador.'; render(); });
   render(); return { render, resume, wait: async () => { await job; } };
 }

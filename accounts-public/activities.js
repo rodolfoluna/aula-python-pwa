@@ -228,6 +228,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   return {
     current: () => opened ? { assignmentId: opened.assignment.id, sync, writable: opened.writable } : null,
     syncControls,
+    canReload: canLeave,
     async setSession(value) {
       const nextKey = value ? value.id + ':' + value.must_change_password : '';
       if (nextKey !== sessionKey) { teardown(); progressId = null; progressTokens.clear(); progressBudget.reset(); $('#progress-list').replaceChildren(); $('#activity-progress').hidden = true; $('#activity-drafts').replaceChildren(); $('#assignments-list').replaceChildren(); sessionKey = nextKey; }

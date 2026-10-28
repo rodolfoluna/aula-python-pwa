@@ -44,7 +44,7 @@ Cerrar sesión elimina el acceso offline y sus actividades preparadas de Indexed
 
 Evita navegación privada y borrar datos del sitio mientras haya pendientes. El navegador puede eliminar almacenamiento por falta de espacio; la app solicita persistencia, pero depende de la decisión del navegador. Comprueba la confirmación de sincronización antes de cambiar de equipo. Una copia local no sustituye la entrega al profesor.
 
-Las actualizaciones de la interfaz esperan a que cierres las ventanas anteriores, sin recargar el código que estás editando. Después de sincronizar, cierra todas las ventanas de Aula Python y vuelve a abrirla para usar una actualización publicada.
+Las actualizaciones de la interfaz esperan a que cierres las ventanas anteriores, sin recargar el código que estás editando. Cuando haya una nueva versión aparece **Actualizar app**. El botón comprueba los cambios pendientes antes de activar la actualización y recargar. También puedes sincronizar, cerrar todas las ventanas de Aula Python y volver a abrirla. Las copias locales y las actividades preparadas se conservan.
 
 ## Desarrollo y pruebas
 
