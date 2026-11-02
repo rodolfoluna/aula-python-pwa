@@ -111,6 +111,10 @@ export function createSupabaseStore(env = process.env, { clientFactory = createC
       return Array.isArray(data) ? data[0] : data;
     },
     async deleteAssignment(id, teacherId) { result(await admin.from('aula_assignments').delete().eq('id', id).eq('teacher_id', teacherId)); },
+    async extendAssignmentDeadline(id, teacherId, previousDueAt, dueAt) {
+      const query = admin.from('aula_assignments').update({ due_at: dueAt }).eq('id', id).eq('teacher_id', teacherId);
+      return result(await (previousDueAt ? query.eq('due_at', previousDueAt) : query.is('due_at', null)).select('id,due_at,closed').maybeSingle());
+    },
     async setAssignmentClosed(id, closed) { return result(await admin.from('aula_assignments').update({ closed }).eq('id', id).select().single()); },
     async health() {
       for (const table of ['aula_profiles', 'aula_groups', 'aula_memberships']) result(await admin.from(table).select('*').limit(1));

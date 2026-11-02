@@ -31,7 +31,13 @@ test('PostgreSQL: asignaciones, RLS, revisión atómica, plazos y entrega final'
     assert.equal((await asUser(teacher, 'select * from aula_submissions')).length, 1); assert.equal((await asUser(stranger, 'select * from aula_submissions')).length, 0);
     await db.query('update aula_assignments set closed = true where id = $1', [assignmentId]); await assert.rejects(save(student, 1), /cerrada/);
     await db.query("update aula_assignments set closed = false, due_at = now() - interval '1 second' where id = $1", [assignmentId]); await assert.rejects(save(student, 1), /vencida/);
-    await db.query('update aula_assignments set due_at = null where id = $1', [assignmentId]);
+    const snapshotBeforeExtension = (await db.query('select snapshot from aula_assignments where id = $1', [assignmentId])).rows[0].snapshot;
+    await assert.rejects(asUser(student, "update aula_assignments set due_at = now() + interval '7 days'"));
+    await assert.rejects(asUser(teacher, "update aula_assignments set due_at = now() + interval '7 days'"));
+    await db.exec('set role service_role');
+    await db.query("update aula_assignments set due_at = now() + interval '7 days' where id = $1", [assignmentId]);
+    await db.exec('reset role');
+    assert.deepEqual((await db.query('select snapshot from aula_assignments where id = $1', [assignmentId])).rows[0].snapshot, snapshotBeforeExtension);
     assert.ok((await save(student, 1, true)).rows[0].submitted_at); await assert.rejects(save(student, 2), /entregada/);
     await assert.rejects(db.query("update aula_assignments set snapshot = '{}' where id = $1", [assignmentId]), /publicada/);
     async function review(revision, action = 'review', grade = 80, feedback = 'Corrige la suma.', deadline = new Date(Date.now() + 86400000).toISOString(), actor = teacher) {

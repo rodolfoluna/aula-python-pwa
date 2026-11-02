@@ -73,6 +73,11 @@ export function memoryAccountStore() {
       for (const [key, value] of submissions) if (value.assignment_id === id) submissions.delete(key);
       for (const [key, value] of reviews) if (value.assignment_id === id) reviews.delete(key);
     },
+    async extendAssignmentDeadline(id, teacherId, previousDueAt, dueAt) {
+      const assignment = assignments.get(id);
+      if (!assignment || assignment.teacher_id !== teacherId || (assignment.due_at || null) !== (previousDueAt || null)) return null;
+      assignment.due_at = dueAt; return copy(assignment);
+    },
     async setAssignmentClosed(id, closed) { assignments.get(id).closed = closed; return copy(assignments.get(id)); },
     async reviewSummaries(assignmentId, studentId) { return [...reviews.values()].filter(row => row.assignment_id === assignmentId && row.student_id === studentId).reverse().map(({ answer, ...rest }) => copy(rest)); },
     async review(id, assignmentId, studentId) { const row = reviews.get(id); return row?.assignment_id === assignmentId && row?.student_id === studentId ? copy(row) : null; },

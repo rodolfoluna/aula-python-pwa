@@ -11,3 +11,5 @@
 #activity-workspace > .worksheet-toolbar:first-child{position:sticky;top:0;background:white;z-index:2;padding:12px 0;border-bottom:1px solid #dce7e1}
 #worksheet > .worksheet-code:last-child{min-height:350px}
 main:has(#activities-hub:not([hidden])[data-screen="work"]) > #student-panel{display:none}
+
+.assignment-deadline-form{margin-top:16px;padding-top:12px;border-top:1px solid #dce7e1}.assignment-deadline-form h4{margin:0 0 12px}.assignment-deadline-form label{display:block}.assignment-deadline-form input{display:block;margin-top:6px}

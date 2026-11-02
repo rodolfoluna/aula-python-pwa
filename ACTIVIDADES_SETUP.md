@@ -144,3 +144,22 @@ anteriores, `supabase/migrations/202610240001_assignment_delete.sql`.
 Esta migración configura el borrado en cascada; no borra registros al ejecutarla.
 La API comprueba que la asignación pertenece al profesor autenticado. Las escrituras
 directas de alumnos y profesores continúan bloqueadas por los permisos existentes.
+
+
+## Extender la fecha límite de una asignación
+
+En **Actividades y avances**, cada asignación con vencimiento tiene el botón
+**Extender fecha límite**. El profesor elige una fecha futura y posterior al plazo
+actual y pulsa **Guardar nueva fecha**. Si no había vencimiento, aparece
+**Establecer fecha límite**. La fecha se introduce en la zona horaria del equipo.
+
+La ampliación se aplica solo a esa asignación del grupo, conserva el código,
+las entregas, las revisiones y la plantilla publicada, y permite continuar una
+actividad que solo estaba bloqueada por vencimiento. Un cierre manual permanece
+cerrado hasta usar **Reabrir actividad**. Los plazos individuales de corrección
+se conservan; las entregas realizadas continúan en modo de solo lectura.
+Los alumnos reciben la fecha actualizada al recargar o volver a abrir con conexión.
+
+La API comprueba al profesor propietario, exige una ampliación válida y evita
+sobrescribir cambios simultáneos del plazo. Usa la columna `due_at` existente;
+no requiere migración SQL.

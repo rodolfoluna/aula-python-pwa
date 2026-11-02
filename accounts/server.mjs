@@ -96,6 +96,7 @@ export function createAccountsServer({ store, configError, secure = false, origi
       if (path === '/api/activity-progress' && req.method === 'POST') { const data = await body(req); json(res, 200, await activities.progress(profile, data.assignmentId, data.token)); return; }
       if (path === '/api/answer-review' && req.method === 'POST') { json(res, 200, { review: await activities.review(profile, await body(req)) }); return; }
       if (path === '/api/assignment-delete' && req.method === 'POST') { json(res, 200, await activities.deleteAssignment(profile, await body(req))); return; }
+      if (path === '/api/assignment-deadline' && req.method === 'POST') { json(res, 200, { assignment: await activities.extendDeadline(profile, await body(req)) }); return; }
       if (path === '/api/assignment-state' && req.method === 'POST') { json(res, 200, { assignment: await activities.close(profile, await body(req)) }); return; }
       if (path === '/api/roster' && req.method === 'GET') {
         const [students, groups, memberships] = await Promise.all([store.listStudents(profile.id), store.listGroups(profile.id), store.listMemberships(profile.id)]);
