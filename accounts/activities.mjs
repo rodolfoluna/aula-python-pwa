@@ -122,12 +122,11 @@ export function createActivitiesService(store, clock = () => Date.now()) {
       await store.deleteAssignment(assignment.id, profile.id); templates.delete(assignment.id);
       return { deleted: true };
     },
-    async extendDeadline(profile, data) {
+    async setDeadline(profile, data) {
       if (profile.role !== 'teacher') throw new AccountError(403, 'Solo el profesor puede cambiar la fecha límite.');
       const assignment = await assigned(profile, data.assignmentId, false);
-      if (typeof data.dueAt !== 'string' || !Number.isFinite(Date.parse(data.dueAt)) || Date.parse(data.dueAt) <= clock()) throw new AccountError(400, 'Selecciona una fecha límite futura.');
-      if (assignment.due_at && Date.parse(data.dueAt) <= Date.parse(assignment.due_at)) throw new AccountError(400, 'La nueva fecha debe ser posterior a la fecha límite actual.');
-      const updated = await store.extendAssignmentDeadline(assignment.id, profile.id, assignment.due_at, new Date(data.dueAt).toISOString());
+      if (typeof data.dueAt !== 'string' || !Number.isFinite(Date.parse(data.dueAt))) throw new AccountError(400, 'Selecciona una fecha y hora válidas.');
+      const updated = await store.setAssignmentDeadline(assignment.id, profile.id, assignment.due_at, new Date(data.dueAt).toISOString());
       if (!updated) throw new AccountError(409, 'La fecha límite cambió en otra sesión. Actualiza la lista antes de intentarlo de nuevo.');
       return updated;
     },

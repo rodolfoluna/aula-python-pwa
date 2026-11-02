@@ -120,7 +120,7 @@ test('proyecto compartido se guarda por delta y solo su profesor elimina la asig
 });
 
 
-test('el profesor amplía plazos vencidos sin alterar entregas, plantillas ni cierres', async () => {
+test('el profesor adelanta y retrasa plazos sin alterar entregas, plantillas ni cierres', async () => {
   let now = Date.now(); const store = memoryAccountStore();
   const teacher = await store.createUser({ email: 'deadline@example.com', password: 'PruebaTemporal123', role: 'teacher', name: 'Docente' });
   const other = await store.createUser({ email: 'deadlineother@example.com', password: 'PruebaTemporal123', role: 'teacher', name: 'Otro' });
@@ -134,32 +134,41 @@ test('el profesor amplía plazos vencidos sin alterar entregas, plantillas ni ci
   const before = await store.submission(assignment.id, student.id), snapshot = (await store.assignment(assignment.id)).snapshot;
   now += 20000; assert.equal((await service.open(student, assignment.id)).writable, false);
   const dueAt = new Date(now + 86400000).toISOString();
-  await assert.rejects(service.extendDeadline(student, { assignmentId: assignment.id, dueAt }), /profesor/);
-  await assert.rejects(service.extendDeadline(other, { assignmentId: assignment.id, dueAt }), /acceso/);
-  for (const value of [null, '', 'incorrecta', new Date(now - 1).toISOString()]) await assert.rejects(service.extendDeadline(teacher, { assignmentId: assignment.id, dueAt: value }), /futura/);
-  await service.extendDeadline(teacher, { assignmentId: assignment.id, dueAt });
+  await assert.rejects(service.setDeadline(student, { assignmentId: assignment.id, dueAt }), /profesor/);
+  await assert.rejects(service.setDeadline(other, { assignmentId: assignment.id, dueAt }), /acceso/);
+  for (const value of [null, '', 'incorrecta']) await assert.rejects(service.setDeadline(teacher, { assignmentId: assignment.id, dueAt: value }), /válidas/);
+  await service.setDeadline(teacher, { assignmentId: assignment.id, dueAt });
   assert.equal((await service.open(student, assignment.id)).writable, true);
   assert.equal((await store.assignment(assignment.id)).due_at, dueAt);
   assert.deepEqual(await store.submission(assignment.id, student.id), before);
   assert.deepEqual((await store.assignment(assignment.id)).snapshot, snapshot);
   assert.deepEqual(await store.activity(activity.id), activity);
-  await assert.rejects(service.extendDeadline(teacher, { assignmentId: assignment.id, dueAt }), /posterior/);
-  await assert.rejects(service.extendDeadline(teacher, { assignmentId: assignment.id, dueAt: new Date(now + 10000).toISOString() }), /posterior/);
+  await service.setDeadline(teacher, { assignmentId: assignment.id, dueAt });
+  const earlier = new Date(now + 10000).toISOString();
+  await service.setDeadline(teacher, { assignmentId: assignment.id, dueAt: earlier });
+  assert.equal((await store.assignment(assignment.id)).due_at, earlier);
+  assert.equal((await service.open(student, assignment.id)).writable, true);
+  const past = new Date(now - 10000).toISOString();
+  await service.setDeadline(teacher, { assignmentId: assignment.id, dueAt: past });
+  assert.equal((await store.assignment(assignment.id)).due_at, past);
+  assert.equal((await service.open(student, assignment.id)).writable, false);
+  await service.setDeadline(teacher, { assignmentId: assignment.id, dueAt });
+  assert.deepEqual(await store.submission(assignment.id, student.id), before);
   const later = new Date(now + 2 * 86400000).toISOString();
-  const extend = store.extendAssignmentDeadline; store.extendAssignmentDeadline = async () => null;
-  await assert.rejects(service.extendDeadline(teacher, { assignmentId: assignment.id, dueAt: later }), error => error.status === 409);
-  store.extendAssignmentDeadline = extend;
+  const setDeadline = store.setAssignmentDeadline; store.setAssignmentDeadline = async () => null;
+  await assert.rejects(service.setDeadline(teacher, { assignmentId: assignment.id, dueAt: later }), error => error.status === 409);
+  store.setAssignmentDeadline = setDeadline;
   await service.saveAnswer(student, { assignmentId: assignment.id, answer: before.answer, revision: before.revision, submit: true });
   const submitted = await store.submission(assignment.id, student.id);
-  await service.extendDeadline(teacher, { assignmentId: assignment.id, dueAt: later });
+  await service.setDeadline(teacher, { assignmentId: assignment.id, dueAt: later });
   assert.equal((await service.open(student, assignment.id)).writable, false);
   assert.deepEqual(await store.submission(assignment.id, student.id), submitted);
   await service.close(teacher, { assignmentId: assignment.id, closed: true });
-  await service.extendDeadline(teacher, { assignmentId: assignment.id, dueAt: new Date(now + 3 * 86400000).toISOString() });
+  await service.setDeadline(teacher, { assignmentId: assignment.id, dueAt: new Date(now + 3 * 86400000).toISOString() });
   assert.equal((await store.assignment(assignment.id)).closed, true);
-  assert.equal(await store.extendAssignmentDeadline(assignment.id, teacher.id, originalDue, later), null, 'No sobrescribe otra ampliación con datos anteriores');
+  assert.equal(await store.setAssignmentDeadline(assignment.id, teacher.id, originalDue, later), null, 'No sobrescribe otro cambio de fecha con datos anteriores');
   const secondGroup = await store.createGroup(teacher.id, 'B');
   const [unlimited] = await service.assign(teacher, { activityId: activity.id, version: 1, groupIds: [secondGroup.id] });
-  await service.extendDeadline(teacher, { assignmentId: unlimited.id, dueAt: later });
+  await service.setDeadline(teacher, { assignmentId: unlimited.id, dueAt: later });
   assert.equal((await store.assignment(unlimited.id)).due_at, later);
 });

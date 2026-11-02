@@ -135,13 +135,12 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     const form = element('form', undefined, 'assignment-deadline-form');
     const localDate = ms => { const value = new Date(ms); value.setMinutes(value.getMinutes() - value.getTimezoneOffset()); return value.toISOString().slice(0, 16); };
     const previous = assignment.due_at ? Date.parse(assignment.due_at) : 0;
-    const minimum = Math.ceil((Math.max(Date.now(), previous) + 1) / 60000) * 60000;
     const label = element('label', 'Nueva fecha límite (hora de este equipo)'), input = element('input');
-    input.type = 'datetime-local'; input.required = true; input.min = localDate(minimum);
-    input.value = localDate(Math.max(Date.now(), previous) + 86400000); label.append(input);
+    input.type = 'datetime-local'; input.required = true;
+    input.value = localDate(previous || Date.now() + 86400000); label.append(input);
     const save = element('button', 'Guardar nueva fecha', 'primary'); save.type = 'submit';
-    form.append(element('h4', assignment.due_at ? 'Extender fecha límite' : 'Establecer fecha límite'), label,
-      element('p', 'El plazo se aplica a esta asignación del grupo. Las entregas realizadas y los plazos individuales de corrección se conservan.', 'muted'));
+    form.append(element('h4', 'Cambiar fecha límite'), label,
+      element('p', 'Puedes adelantar o retrasar el plazo de esta asignación del grupo. Si eliges una fecha ya vencida, los alumnos sin entregar no podrán seguir editando. Las entregas y los plazos individuales de corrección se conservan.', 'muted'));
     if (assignment.closed) form.append(element('p', 'Esta actividad está cerrada. Usa «Reabrir actividad» para permitir que los alumnos continúen.', 'muted'));
     form.append(save, button('Cancelar cambio de fecha', () => form.remove()));
     form.onsubmit = event => { event.preventDefault(); perform(async () => {
@@ -160,7 +159,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
       const card = element('article', undefined, 'card'), group = getGroups().find(group => group.id === assignment.group_id);
       card.append(element('h3', assignment.title || 'Actividad'), element('p', `${assignment.group?.name || group?.name || 'Mi grupo'} · v${assignment.activity_version} · ${assignment.closed ? 'Cerrada · ' : ''}${answerStatus(assignment.submission)}`, 'muted'), element('p', 'Límite: ' + date(assignment.submission?.returned_at && !assignment.submission?.submitted_at ? assignment.submission.correction_due_at : assignment.due_at), 'muted'));
       if (profile.role === 'student' && assignment.submission?.reviewed_at) card.append(element('p', gradeText(assignment.submission), 'grade-summary'));
-      if (profile.role === 'teacher') card.append(button(assignment.due_at ? 'Extender fecha límite' : 'Establecer fecha límite', () => deadlineForm(card, assignment)), button('Eliminar asignación', async () => {
+      if (profile.role === 'teacher') card.append(button('Cambiar fecha límite', () => deadlineForm(card, assignment)), button('Eliminar asignación', async () => {
         if (!confirm('¿Eliminar esta asignación del grupo? Se eliminarán sus avances, entregas y revisiones. La plantilla se conserva.')) return;
         await api('assignment-delete', { assignmentId: assignment.id });
         if (progressId === assignment.id) { progressId = null; progressTokens.delete(assignment.id); }

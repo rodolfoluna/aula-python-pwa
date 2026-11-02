@@ -73,7 +73,7 @@ export function memoryAccountStore() {
       for (const [key, value] of submissions) if (value.assignment_id === id) submissions.delete(key);
       for (const [key, value] of reviews) if (value.assignment_id === id) reviews.delete(key);
     },
-    async extendAssignmentDeadline(id, teacherId, previousDueAt, dueAt) {
+    async setAssignmentDeadline(id, teacherId, previousDueAt, dueAt) {
       const assignment = assignments.get(id);
       if (!assignment || assignment.teacher_id !== teacherId || (assignment.due_at || null) !== (previousDueAt || null)) return null;
       assignment.due_at = dueAt; return copy(assignment);
