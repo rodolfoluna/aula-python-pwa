@@ -96,19 +96,19 @@ export function createSupabaseStore(env = process.env, { clientFactory = createC
     },
     async saveDelta(assignmentId, studentId, revision, patch, requestId, submit) {
       const { data, error } = await admin.rpc('aula_patch_answer', { assignment_key: assignmentId, student_key: studentId, expected_revision: revision, answer_patch: patch, request_key: requestId, final_submit: submit });
-      if (error) throw Object.assign(new Error(error.message), { code: error.code, status: error.code === '40001' ? 409 : error.code === '42501' ? 403 : error.code === '22023' ? 400 : 500 }); return data;
+      if (error) throw Object.assign(new Error(error.message), { code: error.code, status: ['PT409', '40001'].includes(error.code) ? 409 : error.code === '42501' ? 403 : error.code === '22023' ? 400 : 500 }); return data;
     },
     async submissionSummaries(assignmentId) { return result(await admin.from('aula_submissions').select('student_id,revision,updated_at,submitted_at,grade,reviewed_at,returned_at,correction_due_at').eq('assignment_id', assignmentId)); },
     async reviewSummaries(assignmentId, studentId) { return result(await admin.from('aula_reviews').select('id,action,grade,feedback,created_at,submitted_at,correction_due_at,submission_revision').eq('assignment_id', assignmentId).eq('student_id', studentId).order('created_at', { ascending: false })); },
     async review(id, assignmentId, studentId) { return result(await admin.from('aula_reviews').select('*').eq('id', id).eq('assignment_id', assignmentId).eq('student_id', studentId).maybeSingle()); },
     async reviewAnswer(assignmentId, studentId, teacherId, revision, action, grade, feedback, deadline) {
       const { data, error } = await admin.rpc('aula_review_answer', { assignment_key: assignmentId, student_key: studentId, teacher_key: teacherId, expected_revision: revision, review_action: action, grade_value: grade, feedback_value: feedback, correction_deadline: deadline });
-      if (error) throw Object.assign(new Error(error.message), { code: error.code, status: error.code === '40001' ? 409 : error.code === '42501' ? 403 : error.code === '22023' ? 400 : 500 });
+      if (error) throw Object.assign(new Error(error.message), { code: error.code, status: ['PT409', '40001'].includes(error.code) ? 409 : error.code === '42501' ? 403 : error.code === '22023' ? 400 : 500 });
       return data;
     },
     async saveAnswer(assignmentId, studentId, revision, answer, submit) {
       const { data, error } = await admin.rpc('aula_save_answer', { assignment_key: assignmentId, student_key: studentId, expected_revision: revision, answer_value: answer, final_submit: submit });
-      if (error) throw Object.assign(new Error(error.message), { status: error.code === '40001' ? 409 : error.code === '42501' ? 403 : 500 });
+      if (error) throw Object.assign(new Error(error.message), { status: ['PT409', '40001'].includes(error.code) ? 409 : error.code === '42501' ? 403 : 500 });
       return Array.isArray(data) ? data[0] : data;
     },
     async deleteAssignment(id, teacherId) { result(await admin.from('aula_assignments').delete().eq('id', id).eq('teacher_id', teacherId)); },

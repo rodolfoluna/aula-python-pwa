@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
 import { createSupabaseStore } from '../accounts/supabase-store.mjs';
 
-function fixture() {
+function fixture(errorCode) {
   const calls = [], groups = [{ id: 'group-a', teacher_id: 'teacher', name: 'A' }];
   let assignments = [{ id: 'assignment-a', group_id: 'group-a' }];
   const store = createSupabaseStore({ SUPABASE_URL: 'https://test.supabase.co', SUPABASE_SECRET_KEY: 'test-secret', SUPABASE_PUBLISHABLE_KEY: 'test-public' }, {
     clientFactory: (url, key, options) => createClient(url, key, { ...options, global: { fetch: async (input, init) => {
       const request = new URL(input), table = request.pathname.split('/').at(-1), method = init?.method || 'GET';
       calls.push({ table, method, select: request.searchParams.get('select'), params: request.searchParams });
+      if (errorCode && request.pathname.includes('/rpc/')) return new Response(JSON.stringify({ code: errorCode, message: 'Conflicto de revisión', details: null, hint: null }), { status: 409, headers: { 'content-type': 'application/json' } });
       let data;
       if (table === 'aula_groups') data = groups;
       if (table === 'aula_memberships') data = [{ group_id: 'group-a', student_id: 'student' }];
@@ -28,6 +29,16 @@ test('la lista de integrantes reutiliza los grupos ya consultados sin otra consu
   assert.deepEqual(await store.listMemberships('teacher', groups), before);
   assert.equal(calls.length, 1); assert.equal(calls[0].table, 'aula_memberships');
   calls.length = 0; assert.deepEqual(await store.listMemberships('teacher', []), []); assert.equal(calls.length, 0);
+});
+
+test('los conflictos PT409 y los códigos anteriores conservan HTTP 409 sin reintentos del SDK', async () => {
+  for (const code of ['PT409', '40001']) {
+    const { store, calls } = fixture(code);
+    await assert.rejects(store.saveDelta('assignment', 'student', 1, { changes: [] }, 'request', false), error => error.status === 409);
+    await assert.rejects(store.saveAnswer('assignment', 'student', 1, {}, false), error => error.status === 409);
+    await assert.rejects(store.reviewAnswer('assignment', 'student', 'teacher', 1, 'review', 100, '', null), error => error.status === 409);
+    assert.equal(calls.length, 3);
+  }
 });
 
 test('cerrar una asignación solo devuelve su estado, sin descargar el proyecto', async () => {

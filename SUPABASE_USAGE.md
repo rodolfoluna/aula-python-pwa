@@ -28,3 +28,13 @@ En Usage de la organización de Supabase, selecciona el proyecto y el ciclo mens
 Las pruebas `supabase-traffic.test.mjs`, `efficient-sync.test.mjs` y `progress-traffic-ui.test.mjs` verifican las consultas eliminadas con el SDK, los permisos y la pausa efectiva del seguimiento. No escriben en el proyecto real.
 
 Estas optimizaciones no garantizan que nunca se alcance una cuota: el consumo también depende del número de alumnos, el tamaño de los proyectos, las revisiones conservadas, las reaperturas y otros clientes del mismo proyecto u organización. No se eliminan actividades, respuestas ni historial para reducir espacio.
+
+## Evitar reintentos internos de conflictos de revisión
+
+Los RPC de la app usaban SQLSTATE `40001` para un conflicto de revisión esperado. Supabase documenta que PostgREST 14 puede reintentar indefinidamente una excepción personalizada con ese código. No representa un fallo transitorio: repetir la misma revisión desactualizada nunca tendrá éxito.
+
+La migración `202611030001_conflict_sqlstate.sql` cambia únicamente ese código a `PT409` en los tres RPC de guardado y revisión. Conserva las funciones, los permisos, la validación, las actividades, las respuestas y el historial. El adaptador Node acepta ambos códigos durante la transición y devuelve HTTP 409 para que el editor conserve la copia local y detenga la sincronización hasta resolver el conflicto.
+
+Las conexiones que ya estuvieran atrapadas deben identificarse por PID, inicio de sesión, usuario, aplicación y consulta antes de cerrarlas individualmente. No es necesario reiniciar el proyecto ni contratar otro plan para corregir este problema.
+
+Referencia: [Supabase: SQLSTATE 40001 e infinite retries](https://supabase.com/kb/troubleshooting/high-cpu-and-infinite-transaction-retries-when-using-custom-error-codes-in-rpc-functions).
