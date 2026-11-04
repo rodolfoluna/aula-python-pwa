@@ -120,3 +120,13 @@ Los archivos son virtuales, creados dentro del editor. No hay carga de archivos 
 | `tests/` | Pruebas del motor y del servidor |
 
 Documentación: [Pyodide](https://pyodide.org/en/0.27.7/usage/index.html), [entrada y salida](https://pyodide.org/en/0.27.7/usage/streams.html), [interrupciones](https://pyodide.org/en/0.27.7/usage/keyboard-interrupts.html).
+
+### Interfaz, navegación y editor
+
+La navegación Atrás/Adelante recorre las secciones del aula y conserva la pantalla inicial dentro de la app. Antes de abandonar cambios pendientes se mantiene la confirmación de salida.
+
+El botón de tema del encabezado alterna entre claro y oscuro. La primera visita sigue la preferencia del sistema; una elección manual se conserva en este navegador y también funciona sin conexión. El editor y la consola siguen el mismo tema.
+
+Las actividades de archivos muestran el ejercicio actual y el total, una lista de ejercicios y un explorador del proyecto compartido. El editor Python usa CodeMirror con resaltado, números de línea, plegado, búsqueda, cierre de paréntesis, sangría y sugerencias de palabras de Python y nombres locales. No incorpora un servidor de lenguaje ni extensiones de VS Code. Ctrl+Espacio abre sugerencias, Ctrl+F busca, Ctrl+S guarda y Mayús+Enter ejecuta el archivo actual. Esc seguido de Tab permite salir del editor con el teclado. El cursor y el historial de deshacer se conservan al cambiar de archivo o ejercicio dentro del espacio abierto.
+
+Los recursos del editor se incluyen en el repositorio y en la caché pública de la PWA. Para reconstruirlos tras actualizar dependencias: `npm run build:editor`. La compilación usa las versiones de `package-lock.json` y genera el aviso de licencias en `accounts-public/vendor/code-editor.LICENSE.txt`; Render sirve el resultado sin necesitar dependencias de desarrollo.

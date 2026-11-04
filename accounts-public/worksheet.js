@@ -1,10 +1,14 @@
 import { clone, createCell, canMove, newExercise, filenameOK, projectWorkspace } from '../dist/activity-model.js';
 import { parseNotebook, exportNotebook } from '../dist/notebook.js';
 import { renderMarkdown } from '../dist/markdown.js';
+import { mountCodeEditor } from './code-editor.js';
 
 export function createWorksheet(root, options) {
   const { activity, answer, role, onChange = () => {}, run = () => {}, notice = () => {} } = options;
   const teacher = role === 'teacher'; let readonly = role === 'review' || options.readonly === true, exerciseIndex = 0, activeFile;
+  let editors = [];
+  const editorCache = new Map();
+  let guideOpen = true;
   const el = (tag, className, text) => { const element = document.createElement(tag); if (className) element.className = className; if (text !== undefined) element.textContent = text; return element; };
   function button(text, action, disabled = false, mutation = true) { const b = el('button', mutation ? 'worksheet-mutate' : 'worksheet-run', text); b.type = 'button'; b.disabled = disabled || (mutation && readonly); b.dataset.protectedDisabled = String(b.disabled); b.onclick = () => { if (!b.disabled) action(); }; return b; }
   function input(value, label, changed, multiline = false, locked = false) {
@@ -45,6 +49,7 @@ export function createWorksheet(root, options) {
       if (cell.type === 'markdown') renderMarkdown(preview, cell.code);
       if (teacher || !cell.locked || cell.type !== 'markdown') article.append(input(cell.code, `Contenido celda ${index + 1}`, value => { cell.code = value; if (cell.type === 'markdown') renderMarkdown(preview, value); }, true, !teacher && cell.locked));
       if (cell.type === 'markdown') article.append(preview); root.append(article);
+      if (cell.type === 'code') editors.push(mountCodeEditor(article.querySelector('.worksheet-code'), { cache: editorCache, cacheKey: cell.id, onSave: () => options.onSave?.(), onRun: () => run([{ label: cell.title, payload: { mode: 'notebook', code: cell.code, filename: `celda_${index + 1}.py` } }]) }));
     });
   }
   let project;
@@ -79,13 +84,20 @@ export function createWorksheet(root, options) {
     const nav = el('div', 'worksheet-toolbar');
     nav.append(button('← Anterior', () => { exerciseIndex--; render(); }, exerciseIndex === 0, false), select(originals.map((item, index) => [String(index), item.title]), String(exerciseIndex), 'Ejercicio actual', value => { exerciseIndex = Number(value); render(); }), button('Siguiente →', () => { exerciseIndex++; render(); }, exerciseIndex === originals.length - 1, false));
     if (teacher) nav.append(button('Agregar ejercicio', () => { const { id, title, prompt } = newExercise(); originals.push({ id, title, prompt }); exerciseIndex = originals.length - 1; changed(); }, originals.length >= 30), button('Eliminar ejercicio', () => { if (confirm('¿Eliminar este ejercicio del borrador?')) { originals.splice(exerciseIndex, 1); changed(); } }, originals.length <= 1));
-    root.append(el('p', 'muted', 'Proyecto compartido: todos los ejercicios usan estos mismos archivos.'), nav);
+    const overview = el('div', 'exercise-overview');
+    overview.append(el('strong', 'exercise-counter', `Ejercicio ${exerciseIndex + 1} de ${originals.length}`), el('span', 'muted', 'Un solo proyecto · Archivos compartidos entre todos los ejercicios'));
+    const exerciseList = el('div', 'exercise-list'); exerciseList.setAttribute('aria-label', 'Todos los ejercicios');
+    originals.forEach((item, index) => { const itemButton = button(item.title, () => { exerciseIndex = index; render(); }, false, false); itemButton.setAttribute('aria-current', String(index === exerciseIndex)); itemButton.classList.toggle('selected', index === exerciseIndex); exerciseList.append(itemButton); });
+    const guide = el('details', 'exercise-guide'); guide.open = guideOpen;
+    guide.append(el('summary', '', 'Ejercicios y enunciado'), overview, nav, exerciseList); root.append(guide);
     const prompt = el('div', 'activity-markdown'); renderMarkdown(prompt, original.prompt);
-    if (teacher) root.append(input(original.title, 'Título del ejercicio', value => { original.title = value; }), input(original.prompt, 'Enunciado del ejercicio', value => { original.prompt = value; renderMarkdown(prompt, value); }, true));
-    root.append(prompt);
-    const tabs = el('div', 'worksheet-toolbar');
-    for (const name of Object.keys(work.files)) { const tab = button(name + (project.lockedFiles.includes(name) ? ' 🔒' : ''), () => { activeFile = name; render(); }, false, false); tab.classList.toggle('selected', name === activeFile); tabs.append(tab); }
-    tabs.append(button('Agregar archivo', () => filenameForm('Crear archivo', '', name => { if (!name) return; if (!filenameOK(name) || Object.hasOwn(work.files, name)) { notice('El nombre no es válido o ya existe.', true); return; } work.files[name] = ''; activeFile = name; changed(); }), Object.keys(work.files).length >= 600)); root.append(tabs);
+    if (teacher) guide.append(input(original.title, 'Título del ejercicio', value => { original.title = value; }), input(original.prompt, 'Enunciado del ejercicio', value => { original.prompt = value; renderMarkdown(prompt, value); }, true));
+    guide.append(prompt);
+    const ide = el('section', 'project-ide'), explorer = el('aside', 'project-explorer'), pane = el('div', 'project-pane');
+    explorer.append(el('h3', '', 'EXPLORADOR'), el('p', 'explorer-count', `${Object.keys(work.files).length} archivos en el proyecto`));
+    const tabs = el('div', 'project-files');
+    for (const name of Object.keys(work.files)) { const tab = button(name + (project.lockedFiles.includes(name) ? ' 🔒' : ''), () => { activeFile = name; render(); }, false, false); tab.title = name === work.entry ? 'Archivo principal' : name; tab.setAttribute('aria-pressed', String(name === activeFile)); tab.classList.toggle('selected', name === activeFile); tabs.append(tab); }
+    explorer.append(tabs, button('Agregar archivo', () => filenameForm('Crear archivo', '', name => { if (!name) return; if (!filenameOK(name) || Object.hasOwn(work.files, name)) { notice('El nombre no es válido o ya existe.', true); return; } work.files[name] = ''; activeFile = name; changed(); }), Object.keys(work.files).length >= 600));
     const controls = el('div', 'worksheet-toolbar'), locked = !teacher && project.lockedFiles.includes(activeFile);
     controls.append(el('span', '', 'Archivo principal'), select(Object.keys(work.files).map(name => [name, name]), work.entry, 'Archivo principal', name => { work.entry = name; onChange(); }, readonly));
     controls.append(button('Renombrar archivo', () => filenameForm('Renombrar archivo', activeFile, name => { if (!name) return; if (name === activeFile) { root.querySelector('.worksheet-filename-form')?.remove(); return; } if (!filenameOK(name) || Object.hasOwn(work.files, name)) { notice('Nombre no válido o ya existente.', true); return; } work.files[name] = work.files[activeFile]; delete work.files[activeFile]; if (work.entry === activeFile) work.entry = name; if (teacher) project.lockedFiles = project.lockedFiles.map(item => item === activeFile ? name : item); activeFile = name; changed(); }), locked));
@@ -93,9 +105,13 @@ export function createWorksheet(root, options) {
     if (teacher) controls.append(button(project.lockedFiles.includes(activeFile) ? 'Desbloquear archivo' : 'Bloquear archivo', () => { project.lockedFiles = project.lockedFiles.includes(activeFile) ? project.lockedFiles.filter(name => name !== activeFile) : [...project.lockedFiles, activeFile]; changed(); }));
     controls.append(button('Ejecutar archivo actual', () => run([{ label: activeFile, payload: { mode: 'files', files: clone(work.files), entry: activeFile } }]), false, false));
     controls.append(button('Ejecutar principal', () => run([{ label: original.title, payload: { mode: 'files', files: clone(work.files), entry: work.entry } }]), false, false));
-    root.append(controls, input(work.files[activeFile], `Código de ${activeFile}`, value => { work.files[activeFile] = value; }, true, locked));
+    const filebar = el('div', 'editor-filebar'); filebar.append(el('strong', '', activeFile), el('span', '', 'Python'));
+    const code = input(work.files[activeFile], `Código de ${activeFile}`, value => { work.files[activeFile] = value; }, true, locked);
+    pane.append(filebar, code); ide.append(explorer, pane);
+    root.append(controls, ide, el('p', 'editor-help', 'Ctrl+Espacio: sugerencias · Ctrl+F: buscar · Tab: sangría · Mayús+Enter: ejecutar archivo actual · Ctrl+S: guardar. Esc y luego Tab permite salir del editor.'));
+    editors.push(mountCodeEditor(code, { cache: editorCache, cacheKey: activeFile, onRun: () => run([{ label: activeFile, payload: { mode: 'files', files: clone(work.files), entry: activeFile } }]), onSave: () => options.onSave?.() }));
   }
-  function render() { root.replaceChildren(); if (activity.kind === 'notebook') notebook(); else exercises(); }
+  function render() { guideOpen = root.querySelector('.exercise-guide')?.open ?? guideOpen; editors.forEach(editor => editor.destroy()); editors = []; root.replaceChildren(); if (activity.kind === 'notebook') notebook(); else exercises(); }
   render();
-  return { render, syncControls() { root.querySelectorAll('[data-protected-disabled="true"]').forEach(el => { el.disabled = true; }); }, setReadonly(value) { readonly = value; render(); }, destroy() { root.replaceChildren(); } };
+  return { render, syncControls() { root.querySelectorAll('[data-protected-disabled="true"]').forEach(el => { el.disabled = true; }); }, setReadonly(value) { readonly = value; render(); }, destroy() { editors.forEach(editor => editor.destroy()); editors = []; root.replaceChildren(); } };
 }

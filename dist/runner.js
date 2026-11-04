@@ -59,7 +59,11 @@ window.addEventListener('message', async event => {
     } catch (error) { tell('aula-offline-progress', { error: error.message }); }
     return;
   }
-  if (event.data?.type === 'aula-config') { student = event.data.student !== false; return; }
+  if (event.data?.type === 'aula-theme' || event.data?.type === 'aula-config') {
+    document.documentElement.dataset.theme = event.data.theme === 'dark' ? 'dark' : 'light';
+    if (event.data.type === 'aula-config') student = event.data.student !== false;
+    return;
+  }
   if (event.data?.type !== 'aula-run' || busy || !Array.isArray(event.data.items) || event.data.items.length > 100) return;
   busy = true; stopped = false; status('Preparando ejecución…'); tell('aula-busy', { busy: true }); $('#stop').disabled = false; $('#reset').disabled = true;
   try {

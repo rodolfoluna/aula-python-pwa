@@ -82,7 +82,7 @@ test('interfaz + API: profesor crea/asigna y alumno guarda/entrega; profesor rev
     assert.equal($('#activities-hub').dataset.screen, 'work');
     input('#activity-title', 'Primera práctica'); input('[aria-label="Contenido celda 2"]', 'print(42)'); $('#save-activity').click(); await idle();
     assert.match($('#activity-drafts').textContent, /Primera práctica/);
-    $('#close-work').click(); assert.equal($('#activities-hub').dataset.screen, 'catalog');
+    $('#close-work').click(); await waitFor(() => $('#activities-hub').dataset.screen === 'catalog', 'Atrás no regresó al catálogo');
     document.querySelector('[name="assigned-group"]').checked = true;
     const deadline = new Date(Date.now() + 3600000); deadline.setMinutes(deadline.getMinutes() - deadline.getTimezoneOffset()); $('#assignment-due').value = deadline.toISOString().slice(0, 16);
     $('#assignment-form').dispatchEvent(new dom.window.Event('submit', { cancelable: true })); await idle(); assert.match($('#assignments-list').textContent, /Primera práctica/);

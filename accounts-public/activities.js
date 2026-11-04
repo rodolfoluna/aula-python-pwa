@@ -3,6 +3,7 @@ import { renderMarkdown } from '../dist/markdown.js';
 import { createWorksheet } from './worksheet.js';
 import { DraftSync } from './draft-sync.js';
 import { PollBudget } from './sync-policy.js';
+import { createNavigation } from './navigation.js';
 const $ = selector => document.querySelector(selector);
 const date = value => value ? new Date(value).toLocaleString('es-MX') : 'Sin fecha límite';
 const reviewedCurrent = sub => sub?.reviewed_at && sub?.submitted_at && Date.parse(sub.reviewed_at) >= Date.parse(sub.submitted_at);
@@ -12,6 +13,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   const progressBudget = new PollBudget(), progressTokens = new Map(), progressFlights = new Map();
   let sessionKey, profile, view = 'roster', catalog = { activities: [], assignments: [] }, draft, draftDirty = false, reviewDirty = false, worksheet, sync, opened, progressId, reviewedStudent, ticker, frame, runnerReady, runnerBusy, queued, runnerTimer, cacheKey, epoch = 0;
   const notice = (text, error = false) => { $('#activities-notice').textContent = text; $('#activities-notice').hidden = !text; $('#activities-notice').className = error ? 'error' : ''; };
+  const navigation = createNavigation({ window, canLeave: () => !document.querySelector('#logout:disabled') && canLeave(), onError: error => notice(error.message, true) });
   const element = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   function button(text, action) { const el = element('button', text); el.type = 'button'; el.onclick = () => perform(action); return el; }
   function syncControls() {
@@ -22,6 +24,9 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   }
   function screen(mode) {
     $('#activities-hub').dataset.screen = mode;
+    $('#roster-nav').setAttribute('aria-current', view === 'roster' ? 'page' : 'false');
+    $('#activities-nav').setAttribute('aria-current', view === 'activities' ? 'page' : 'false');
+    document.body.dataset.workspace = mode;
     $('#activity-progress').hidden = mode !== 'progress';
     const target = mode === 'work' ? $('#work-title') : mode === 'progress' ? $('#activity-progress h2') : $('#activities-heading');
     target.tabIndex = -1; target.focus(); target.scrollIntoView?.({ block: 'start' });
@@ -32,7 +37,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     worksheet?.destroy(); worksheet = null; sync = null; opened = null; draft = null; draftDirty = false; reviewDirty = false; reviewedStudent = null; $('#activity-workspace').hidden = true; screen('catalog');
     for (const id of ['feedback-panel', 'review-form', 'review-history', 'back-current-review']) $('#' + id).hidden = true;
   }
-  function canLeave() { if (sync?.inFlight) { notice('Espera a que termine el guardado antes de cambiar de actividad.', true); return false; } if (reviewDirty) return confirm('Hay comentarios o una calificación sin guardar. ¿Salir y descartar esos cambios?'); return !(sync?.dirty || draftDirty) || confirm('Hay cambios sin guardar en el servidor. Se conserva la copia local. ¿Quieres salir de esta actividad?'); }
+  function canLeave() { if (navigation.restoring) return true; if (sync?.inFlight) { notice('Espera a que termine el guardado antes de cambiar de actividad.', true); return false; } if (reviewDirty) return confirm('Hay comentarios o una calificación sin guardar. ¿Salir y descartar esos cambios?'); return !(sync?.dirty || draftDirty) || confirm('Hay cambios sin guardar en el servidor. Se conserva la copia local. ¿Quieres salir de esta actividad?'); }
   const runnerUnavailable = () => new URL(getRunnerOrigin()).protocol === 'https:' ? 'La consola Python no respondió. Vuelve a abrir la actividad; si continúa, avisa al profesor.' : 'La consola no respondió. Inicia npm run dev en otra terminal y vuelve a abrir la actividad.';
   function startRunner(student) {
     frame?.remove(); clearTimeout(runnerTimer); runnerReady = false; runnerBusy = false; queued = null;
@@ -49,21 +54,23 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   }
   window.addEventListener('message', event => {
     if (!frame || event.source !== frame.contentWindow || event.origin !== getRunnerOrigin()) return;
-    if (event.data?.type === 'aula-ready') { runnerReady = true; clearTimeout(runnerTimer); $('#runner-state').textContent = 'Consola lista'; frame.contentWindow.postMessage({ type: 'aula-config', student: frame.dataset.student === 'true' }, getRunnerOrigin()); }
+    if (event.data?.type === 'aula-ready') { runnerReady = true; clearTimeout(runnerTimer); $('#runner-state').textContent = 'Consola lista'; frame.contentWindow.postMessage({ type: 'aula-config', student: frame.dataset.student === 'true', theme: document.documentElement.dataset.theme || 'light' }, getRunnerOrigin()); }
     if (event.data?.type === 'aula-busy') { runnerBusy = event.data.busy === true; $('#runner-state').textContent = runnerBusy ? 'Ejecutando Python…' : 'Ejecución terminada. Revisa la consola.'; syncControls(); }
   });
+  window.addEventListener('aula-theme-change', () => { if (frame && runnerReady) frame.contentWindow.postMessage({ type: 'aula-theme', theme: document.documentElement.dataset.theme }, getRunnerOrigin()); });
   function cacheDraft() {
     draftDirty = true; $('#draft-state').textContent = 'Cambios sin guardar en Supabase';
     try { localStorage.setItem(cacheKey, JSON.stringify(draft)); } catch { notice('No se pudo conservar el borrador local. Guarda antes de cerrar.', true); }
   }
-  function showDraft(activity) {
+  function showDraft(activity, replace = false) {
     if (!canLeave()) return;
     teardown(); draft = clone(activity); cacheKey = 'aula-activity-draft:' + profile.id + ':' + (draft.id || 'new');
     try { const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null'); if (cached && cached.kind === draft.kind && cached.version === draft.version) { draft = { ...cached, ...normalizeActivity(cached) }; draftDirty = true; } } catch {}
     $('#activity-workspace').hidden = false; screen('work'); $('#teacher-draft-fields').hidden = false; $('#answer-controls').hidden = true; $('#work-readonly').hidden = true;
     $('#work-title').textContent = draft.id ? 'Editar plantilla · versión ' + draft.version : 'Crear actividad'; $('#activity-title').value = draft.title; $('#activity-instructions').value = draft.instructions;
     $('#draft-state').textContent = draftDirty ? 'Borrador local recuperado; todavía no está guardado en Supabase.' : 'Guarda antes de asignar a un grupo.';
-    $('#work-instructions').replaceChildren(); worksheet = createWorksheet($('#worksheet'), { activity: draft, role: 'teacher', onChange: cacheDraft, run, notice }); startRunner(false); syncControls();
+    $('#work-instructions').replaceChildren(); worksheet = createWorksheet($('#worksheet'), { activity: draft, role: 'teacher', onChange: cacheDraft, onSave: () => $('#save-activity').click(), run, notice }); startRunner(false); syncControls();
+    navigation.record('draft:' + (activity.id || activity.kind), () => showDraft(activity), replace);
   }
   async function openAnswer(assignmentId, studentId, force = false, discardLocal = false) {
     if (!force && !canLeave()) return;
@@ -87,8 +94,9 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
       ticker.unref?.();
     }
     worksheet = createWorksheet($('#worksheet'), { activity: template, answer, role: own ? 'student' : 'review', readonly: !data.writable,
-      onChange: () => sync?.set(answer), run, notice }); startRunner(own); if (own && data.writable && template.kind === 'files') sync.set(answer); syncControls();
+      onChange: () => sync?.set(answer), onSave: () => $('#save-answer').click(), run, notice }); startRunner(own); if (own && data.writable && template.kind === 'files') sync.set(answer); syncControls();
     renderFeedback(data, own);
+    navigation.record('answer:' + assignmentId + ':' + (studentId || ''), () => openAnswer(assignmentId, studentId));
   }
   function renderFeedback(data, own) {
     const sub = data.submission;
@@ -122,6 +130,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     renderMarkdown($('#feedback-text'), review.feedback || 'Sin comentarios.');
     $('#back-current-review').hidden = false; $('#back-current-review').onclick = () => perform(() => openAnswer(assignmentId, profile.role === 'teacher' ? studentId : null));
     worksheet = createWorksheet($('#worksheet'), { activity: assignment.snapshot, answer: review.answer, role: 'review', readonly: true, run, notice }); startRunner(profile.role === 'student'); syncControls();
+    navigation.record('history:' + reviewId, () => showHistorical(assignmentId, studentId, reviewId));
   }
   function renderAssignmentForm() {
     const select = $('#assignment-activity'), previous = select.value; select.replaceChildren();
@@ -166,6 +175,10 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
         await refresh(); notice('Asignación eliminada.');
       }), button('Ver avances', () => showProgress(assignment.id)), button(assignment.closed ? 'Reabrir actividad' : 'Cerrar actividad', async () => { await api('assignment-state', { assignmentId: assignment.id, closed: !assignment.closed }); await refresh(); }));
       else card.append(button(assignment.submission?.submitted_at ? 'Ver mi entrega' : 'Abrir actividad', () => openAnswer(assignment.id)));
+      card.querySelectorAll('button').forEach(action => {
+        if (['Ver avances', 'Abrir actividad', 'Ver mi entrega', 'Editar plantilla'].includes(action.textContent)) action.classList.add('primary');
+        if (action.textContent === 'Eliminar asignación') action.classList.add('danger');
+      });
       $('#assignments-list').append(card);
     }
     if (!(catalog.assignments || []).length) $('#assignments-list').append(element('p', 'Todavía no hay actividades asignadas.', 'muted'));
@@ -177,6 +190,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     if (!automatic) screen('progress');
     if (progressId !== id) progressBudget.reset();
     progressId = id;
+    if (!automatic) navigation.record('progress:' + id, () => showProgress(id));
     if (progressFlights.has(id)) return progressFlights.get(id);
     const request = (async () => {
     const actorId = profile?.id;
@@ -201,8 +215,18 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   window.addEventListener('offline', syncControls);
   window.addEventListener('pagehide', () => autoSave(true));
   progressTimer.unref?.();
-  $('#roster-nav').onclick = () => { if (!canLeave()) return; teardown(); view = 'roster'; $('#teacher-panel').hidden = false; $('#activities-hub').hidden = true; };
-  $('#activities-nav').onclick = () => perform(async () => { if (!canLeave()) return; teardown(); view = 'activities'; $('#teacher-panel').hidden = true; $('#activities-hub').hidden = false; await refresh(); });
+  async function showSection(section) {
+    if (!canLeave()) return;
+    teardown(); view = section;
+    $('#teacher-panel').hidden = profile?.role !== 'teacher' || section !== 'roster';
+    $('#activities-hub').hidden = section !== 'activities';
+    screen('catalog');
+    if (section === 'activities') await refresh();
+    navigation.record(section, () => showSection(section));
+  }
+  $('#roster-nav').onclick = () => perform(() => showSection('roster'));
+  $('#activities-nav').onclick = () => perform(() => showSection('activities'));
+  document.querySelector('.brand').onclick = event => { if (profile && !profile.must_change_password) { event.preventDefault(); perform(() => showSection(profile.role === 'teacher' ? 'roster' : 'activities')); } };
   $('#refresh-activities').onclick = () => perform(refresh); $('#refresh-progress').onclick = () => perform(() => showProgress(progressId));
   $('#new-notebook-activity').onclick = () => showDraft(newActivity('notebook')); $('#new-files-activity').onclick = () => showDraft(newActivity('files'));
   $('#activity-title').oninput = () => { if (draft) { draft.title = $('#activity-title').value; cacheDraft(); } };
@@ -210,7 +234,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   $('#save-activity').onclick = () => perform(async () => {
     if (!draft) return;
     const clean = normalizeActivity(draft), result = await api('activity-save', { ...clean, ...(draft.id ? { id: draft.id, version: draft.version } : {}) });
-    localStorage.removeItem(cacheKey); draftDirty = false; await refresh(); showDraft(result.activity); notice('Actividad guardada. Ya puedes asignar esta versión a grupos.');
+    localStorage.removeItem(cacheKey); draftDirty = false; await refresh(); showDraft(result.activity, true); notice('Actividad guardada. Ya puedes asignar esta versión a grupos.');
   });
   $('#assignment-form').onsubmit = event => { event.preventDefault(); perform(async () => {
     const activity = (catalog.activities || []).find(activity => activity.id === $('#assignment-activity').value);
@@ -239,8 +263,8 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     catch (error) { worksheet.setReadonly(!opened.writable || sync.blocked); throw error; }
     finally { syncControls(); }
   });
-  $('#close-work').onclick = () => { if (canLeave()) { const back = reviewedStudent && progressId; teardown(); if (back) screen('progress'); } };
-  $('#close-progress').onclick = () => { progressId = null; screen('catalog'); };
+  $('#close-work').onclick = () => navigation.back();
+  $('#close-progress').onclick = () => navigation.back();
   window.addEventListener('beforeunload', event => { if (sync?.dirty || draftDirty || reviewDirty) { event.preventDefault(); event.returnValue = ''; } });
   for (const eventName of ['copy', 'cut', 'paste', 'drop']) document.addEventListener(eventName, event => { if (profile?.role === 'student' && !profile.must_change_password) event.preventDefault(); }, true);
   document.addEventListener('beforeinput', event => { if (profile?.role === 'student' && !profile.must_change_password && ['insertFromPaste', 'insertFromDrop'].includes(event.inputType)) event.preventDefault(); }, true);
@@ -250,7 +274,12 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     canReload: canLeave,
     async setSession(value) {
       const nextKey = value ? value.id + ':' + value.must_change_password : '';
-      if (nextKey !== sessionKey) { teardown(); progressId = null; progressTokens.clear(); progressBudget.reset(); $('#progress-list').replaceChildren(); $('#activity-progress').hidden = true; $('#activity-drafts').replaceChildren(); $('#assignments-list').replaceChildren(); sessionKey = nextKey; }
+      if (nextKey !== sessionKey) {
+        teardown(); progressId = null; progressTokens.clear(); progressBudget.reset(); $('#progress-list').replaceChildren(); $('#activity-progress').hidden = true; $('#activity-drafts').replaceChildren(); $('#assignments-list').replaceChildren(); sessionKey = nextKey;
+        view = value?.role === 'student' ? 'activities' : 'roster';
+        const home = view;
+        navigation.reset(nextKey, { key: home, restore: () => showSection(home) });
+      }
       profile = value; $('#activity-teacher-tools').hidden = profile?.role !== 'teacher';
       if (profile?.role === 'teacher') $('#teacher-panel').hidden = profile.must_change_password || view === 'activities';
       $('#activities-hub').hidden = !profile || profile.must_change_password || (profile.role === 'teacher' && view === 'roster');

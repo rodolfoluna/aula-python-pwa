@@ -24,6 +24,10 @@ test('HTTPS publicado: cookie segura, CSRF por origen, cabeceras y secretos inac
     assert.match(page.headers.get('permissions-policy'), /https:\/\/python.example/);
     assert.match(page.headers.get('content-security-policy'), /frame-src https:\/\/python.example;/);
     assert.equal(page.headers.get('cross-origin-embedder-policy'), 'require-corp');
+    const html = await page.text(), nonce = html.match(/name="style-nonce" content="([^"]+)"/)[1];
+    assert.ok(page.headers.get('content-security-policy').includes(`'nonce-${nonce}'`));
+    assert.ok(!page.headers.get('content-security-policy').includes('unsafe-inline'));
+    for (const path of ['/navigation.js', '/code-editor.js', '/vendor/code-editor.js']) assert.equal((await fetch(base + path)).status, 200);
     const login = origin => fetch(base + '/api/login', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ login: 'teacher@example.com', password: 'PruebaSegura1234' }) });
     assert.equal((await login('https://python.example')).status, 403);
     const response = await login('https://aula.example'); assert.equal(response.status, 200); assert.match(response.headers.get('set-cookie'), /; Secure/);
