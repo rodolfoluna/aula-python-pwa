@@ -103,7 +103,8 @@ export function createAccountsServer({ store, configError, secure = false, origi
       if (path === '/api/assignment-deadline' && req.method === 'POST') { json(res, 200, { assignment: await activities.setDeadline(profile, await body(req)) }); return; }
       if (path === '/api/assignment-state' && req.method === 'POST') { json(res, 200, { assignment: await activities.close(profile, await body(req)) }); return; }
       if (path === '/api/roster' && req.method === 'GET') {
-        const [students, groups, memberships] = await Promise.all([store.listStudents(profile.id), store.listGroups(profile.id), store.listMemberships(profile.id)]);
+        const [students, groups] = await Promise.all([store.listStudents(profile.id), store.listGroups(profile.id)]);
+        const memberships = await store.listMemberships(profile.id, groups);
         json(res, 200, { students, groups, memberships }); return;
       }
       if (path === '/api/students' && req.method === 'POST') { const data = await body(req); json(res, 200, await service.importStudents(profile, data.rows, data.groupId)); return; }

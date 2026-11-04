@@ -51,7 +51,7 @@ export function createActivitiesService(store, clock = () => Date.now()) {
       const assignment = await assigned(profile, id);
       if (profile.role === 'teacher' && !studentId) throw new AccountError(400, 'Selecciona un alumno para revisar.');
       const target = profile.role === 'student' ? profile.id : studentId;
-      const student = await store.profile(target);
+      const student = profile.role === 'student' ? profile : await store.profile(target);
       if (!student || student.role !== 'student' || student.teacher_id !== assignment.teacher_id) throw denied();
       const submission = await store.submission(id, target);
       if (submission) answers.set(id + ':' + target, { revision: submission.revision, answer: submission.answer });
@@ -95,7 +95,7 @@ export function createActivitiesService(store, clock = () => Date.now()) {
       if (!['review', 'return'].includes(data.action) || !Number.isInteger(data.revision) || data.revision < 1 ||
         !(data.grade === null || (typeof data.grade === 'number' && Number.isFinite(data.grade) && data.grade >= 0 && data.grade <= 100 && Math.abs(data.grade * 100 - Math.round(data.grade * 100)) < 1e-8)) ||
         typeof data.feedback !== 'string' || data.feedback.length > 10000) throw new AccountError(400, 'Usa una calificación de 0 a 100 con hasta dos decimales y comentarios de hasta 10 000 caracteres.');
-      const submission = await store.submission(assignment.id, student.id);
+      const submission = await store.submissionState(assignment.id, student.id);
       if (!submission?.submitted_at) throw new AccountError(409, 'El alumno debe entregar antes de revisar o devolver.');
       if (submission.revision !== data.revision) throw new AccountError(409, 'La entrega cambió. Vuelve a abrirla antes de revisar.');
       let deadline = null;
@@ -130,6 +130,6 @@ export function createActivitiesService(store, clock = () => Date.now()) {
       if (!updated) throw new AccountError(409, 'La fecha límite cambió en otra sesión. Actualiza la lista antes de intentarlo de nuevo.');
       return updated;
     },
-    async close(profile, data) { const assignment = await assigned(profile, data.assignmentId); if (profile.role !== 'teacher' || typeof data.closed !== 'boolean') throw new AccountError(403, 'Solo el profesor puede cerrar actividades.'); return store.setAssignmentClosed(assignment.id, data.closed); },
+    async close(profile, data) { const assignment = await assigned(profile, data.assignmentId, false); if (profile.role !== 'teacher' || typeof data.closed !== 'boolean') throw new AccountError(403, 'Solo el profesor puede cerrar actividades.'); return store.setAssignmentClosed(assignment.id, data.closed); },
   };
 }

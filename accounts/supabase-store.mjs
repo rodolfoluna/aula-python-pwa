@@ -39,8 +39,8 @@ export function createSupabaseStore(env = process.env, { clientFactory = createC
     async listGroups(teacherId) { return result(await admin.from('aula_groups').select('*').eq('teacher_id', teacherId).order('name')); },
     async group(id) { return result(await admin.from('aula_groups').select('*').eq('id', id).maybeSingle()); },
     async createGroup(teacherId, name) { return result(await admin.from('aula_groups').insert({ teacher_id: teacherId, name }).select().single()); },
-    async listMemberships(teacherId) {
-      const groups = await this.listGroups(teacherId);
+    async listMemberships(teacherId, knownGroups) {
+      const groups = knownGroups || await this.listGroups(teacherId);
       return groups.length ? result(await admin.from('aula_memberships').select('*').in('group_id', groups.map(group => group.id))) : [];
     },
     async studentGroups(studentId) { return result(await admin.from('aula_memberships').select('aula_groups(id,name)').eq('student_id', studentId)).map(row => row.aula_groups); },
@@ -84,7 +84,8 @@ export function createSupabaseStore(env = process.env, { clientFactory = createC
       const memberships = result(await admin.from('aula_memberships').select('group_id').eq('student_id', studentId));
       if (!memberships.length) return [];
       const assignments = result(await admin.from('aula_assignments').select('id,group_id,activity_version,closed,due_at,created_at,title:snapshot->>title,group:aula_groups(name)').in('group_id', memberships.map(row => row.group_id)).order('created_at', { ascending: false }));
-      const submissions = result(await admin.from('aula_submissions').select('assignment_id,revision,updated_at,submitted_at,grade,reviewed_at,returned_at,correction_due_at').eq('student_id', studentId));
+      if (!assignments.length) return [];
+      const submissions = result(await admin.from('aula_submissions').select('assignment_id,revision,updated_at,submitted_at,grade,reviewed_at,returned_at,correction_due_at').eq('student_id', studentId).in('assignment_id', assignments.map(row => row.id)));
       return assignments.map(assignment => ({ ...assignment, submission: submissions.find(row => row.assignment_id === assignment.id) || null }));
     },
     async submission(assignmentId, studentId) { return result(await admin.from('aula_submissions').select('*').eq('assignment_id', assignmentId).eq('student_id', studentId).maybeSingle()); },
@@ -115,7 +116,7 @@ export function createSupabaseStore(env = process.env, { clientFactory = createC
       const query = admin.from('aula_assignments').update({ due_at: dueAt }).eq('id', id).eq('teacher_id', teacherId);
       return result(await (previousDueAt ? query.eq('due_at', previousDueAt) : query.is('due_at', null)).select('id,due_at,closed').maybeSingle());
     },
-    async setAssignmentClosed(id, closed) { return result(await admin.from('aula_assignments').update({ closed }).eq('id', id).select().single()); },
+    async setAssignmentClosed(id, closed) { return result(await admin.from('aula_assignments').update({ closed }).eq('id', id).select('id,closed,due_at').single()); },
     async health() {
       for (const table of ['aula_profiles', 'aula_groups', 'aula_memberships']) result(await admin.from(table).select('*').limit(1));
     },

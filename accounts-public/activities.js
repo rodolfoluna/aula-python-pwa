@@ -208,9 +208,10 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     try { return await request; } finally { if (progressFlights.get(id) === request) progressFlights.delete(id); }
   }
   const online = () => window.navigator?.onLine !== false;
+  const watchingProgress = () => profile?.role === 'teacher' && progressId && !$('#activities-hub').hidden && $('#activities-hub').dataset.screen === 'progress' && !document.hidden && online();
   function autoSave(keepalive = false) { if (opened?.writable && online() && sync?.dirty && !sync.conflict && !sync.blocked && !sync.inFlight && Date.now() >= sync.nextRetryAt) sync.flush(false, { keepalive }).then(syncControls).catch(syncControls); }
-  const progressTimer = setInterval(() => { if (profile?.role === 'teacher' && progressId && !$('#activities-hub').hidden && !document.hidden && online() && progressBudget.due()) showProgress(progressId, true).catch(() => {}); }, 15000);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) autoSave(true); else { autoSave(); if (progressId && progressBudget.due() && online() && profile?.role === 'teacher' && !$('#activities-hub').hidden) showProgress(progressId, true).catch(() => {}); } });
+  const progressTimer = setInterval(() => { if (watchingProgress() && progressBudget.due()) showProgress(progressId, true).catch(() => {}); }, 15000);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) autoSave(true); else { autoSave(); if (watchingProgress() && progressBudget.due()) showProgress(progressId, true).catch(() => {}); } });
   window.addEventListener('online', () => autoSave());
   window.addEventListener('offline', syncControls);
   window.addEventListener('pagehide', () => autoSave(true));

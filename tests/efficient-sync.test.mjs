@@ -79,3 +79,24 @@ test('seguimiento y caché: limita consultas en reposo, retrocede en fallos y ac
   cache.set('one', { value: '1234567890' }); cache.set('two', { value: '1234567890' }); assert.equal(cache.get('one'), undefined);
   const copy = cache.get('two'); copy.value = 'changed'; assert.equal(cache.get('two').value, '1234567890'); now += 11; assert.equal(cache.get('two'), undefined);
 });
+
+test('abrir como alumno no relee su perfil y revisar/cerrar no descargan código para comprobar el estado', async () => {
+  const store = memoryAccountStore(), teacher = await store.createUser({ email: 'traffic@example.com', password: 'PruebaTemporal123', role: 'teacher', name: 'Docente' });
+  let pupil = await store.createUser({ email: 'traffic-pupil@example.com', password: 'PruebaTemporal123', role: 'student', teacherId: teacher.id, control: '010', name: 'Ana' });
+  pupil = await store.updateProfile(pupil.id, { must_change_password: false });
+  const group = await store.createGroup(teacher.id, 'A'); await store.setMembership(group.id, pupil.id, true);
+  const service = createActivitiesService(store), activity = await service.saveActivity(teacher, newActivity());
+  const [assignment] = await service.assign(teacher, { activityId: activity.id, version: 1, groupIds: [group.id] });
+  let profiles = 0, snapshots = 0, answers = 0;
+  for (const [method, counted] of [['profile', () => profiles++], ['assignment', () => snapshots++], ['submission', () => answers++]]) {
+    const original = store[method].bind(store); store[method] = (...args) => { counted(); return original(...args); };
+  }
+  const opened = await service.open(pupil, assignment.id); assert.equal(profiles, 0);
+  await service.saveAnswer(pupil, { assignmentId: assignment.id, revision: 0, answer: opened.answer, submit: true });
+  snapshots = answers = 0;
+  await service.review(teacher, { assignmentId: assignment.id, studentId: pupil.id, revision: 1, action: 'review', grade: 100, feedback: 'Bien' });
+  assert.equal(answers, 0);
+  // A fresh service has no template cache, so closing must still need no snapshot.
+  await createActivitiesService(store).close(teacher, { assignmentId: assignment.id, closed: true });
+  assert.equal(snapshots, 0); assert.equal((await store.assignmentMeta(assignment.id)).closed, true);
+});
