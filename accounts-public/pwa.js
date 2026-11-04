@@ -42,7 +42,7 @@ export async function syncPending({ profile, storage, api, current = () => null 
   return { saved, held };
 }
 
-export function setupPwa({ workspace, api, getProfile, getRunnerOrigin, current, canReload = () => true, perform }) {
+export function setupPwa({ workspace, api, getProfile, getRunnerOrigin, current, canReload = () => true, perform, reload = () => location.reload() }) {
   const $ = id => document.getElementById(id);
   if (!$('pwa-status')) return { render() {}, resume() {}, wait: async () => {} };
   let prompt, job, preparing = false, detail = '', worker, nextAttempt = 0, registration, reloadAfterUpdate = false;
@@ -124,7 +124,7 @@ export function setupPwa({ workspace, api, getProfile, getRunnerOrigin, current,
     registration.waiting.postMessage({ type: 'activate-update' });
   });
   navigator.serviceWorker?.addEventListener?.('controllerchange', () => {
-    if (reloadAfterUpdate) { reloadAfterUpdate = false; location.reload(); }
+    if (reloadAfterUpdate) { reloadAfterUpdate = false; reload(); }
   });
   worker = supported ? navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then(value => {
     registration = value;

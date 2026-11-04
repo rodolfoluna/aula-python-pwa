@@ -84,15 +84,17 @@ test('recibo perdido se reconoce al reconectar y no duplica la escritura', async
   assert.equal(server.calls.filter(c => c.path === 'answer-save').length, 1);
 });
 
-async function workerHarness(file, assets) {
-  const handlers = {}, stores = new Map(), network = []; let updates = 0;
+async function workerHarness(file, assets, { stores = new Map(), version = 'test', publicAssets = ['/', '/app.js'], runnerVersion } = {}) {
+  const handlers = {}, network = []; let updates = 0;
   const caches = { keys: async () => [...stores.keys()], delete: async k => stores.delete(k), open: async name => {
     if (!stores.has(name)) stores.set(name, new Map()); const map = stores.get(name);
     return { addAll: async paths => { for (const path of paths) map.set(typeof path === 'string' ? path : path.url, new Response('public', { headers: { 'Cross-Origin-Embedder-Policy': 'require-corp' } })); }, match: async key => map.get(key)?.clone(), put: async (key, value) => map.set(key, value.clone()) };
   } };
-  const context = { self: { skipWaiting: async () => { updates++; }, location: { origin: 'https://app.test' }, clients: { claim: async () => {} }, AULA_SHELL: { version: 'test', assets: ['/', '/app.js'] }, addEventListener: (name, callback) => handlers[name] = callback }, caches, URL, Request: class { constructor(url) { this.url = url; } }, Response, Uint8Array, crypto: webcrypto,
+  const context = { self: { skipWaiting: async () => { updates++; }, location: { origin: 'https://app.test' }, clients: { claim: async () => {} }, AULA_SHELL: { version, assets: publicAssets }, addEventListener: (name, callback) => handlers[name] = callback }, caches, URL, Request: class { constructor(url) { this.url = url; } }, Response, Uint8Array, crypto: webcrypto,
     importScripts() {}, fetch: async (url, options) => { network.push({ url, options }); if (assets?.[url]) return new Response(assets[url]); throw new TypeError('Offline'); } };
-  vm.runInNewContext(await readFile(new URL('../' + file, import.meta.url), 'utf8'), context);
+  let source = await readFile(new URL('../' + file, import.meta.url), 'utf8');
+  if (runnerVersion) source = source.replaceAll('__RUNNER_VERSION__', runnerVersion);
+  vm.runInNewContext(source, context);
   const event = async (name, data = {}) => { let promise; handlers[name]({ ...data, waitUntil: p => promise = p, respondWith: p => promise = p }); return await promise; };
   return { event, stores, caches, network, updates: () => updates };
 }
@@ -122,4 +124,38 @@ test('Python offline verifica integridad, descarga sin credenciales y reutiliza 
   await worker.event('message', { data: { type: 'prepare-python' }, ports: [{ postMessage: m => messages.push(m) }] });
   assert.equal(worker.network.length, before);
   assert.equal(await (await worker.event('fetch', { request: { method: 'GET', url } })).text(), bytes);
+});
+
+test('actualizar las dos interfaces conserva Python, IndexedDB y borradores; el editor nuevo abre desde caché sin red', async () => {
+  const { shellAssets } = await import('../scripts/build-pwa.mjs');
+  const stores = new Map(), local = storage(), database = new IDBFactory();
+  const workspace = new OfflineWorkspace(indexedStore(database)), data = opened();
+  await workspace.prepare(profile, { configured: true }, { assignments: [{ id: 'one' }] }, { groups: [] }, [data]);
+  edit(local, data, 'avance_antes_de_actualizar = 42');
+  const before = local.getItem('aula-answer:student:one');
+  const first = await workerHarness('accounts-public/sw.js', {}, { stores, version: 'previous' });
+  await first.event('install'); await first.event('activate');
+  const python = await first.caches.open('aula-python-0.27.7-matplotlib-v1');
+  await python.put('runtime', new Response('Python descargado'));
+  const oldRunner = await workerHarness('dist/runner-sw.js', {}, { stores, runnerVersion: 'previous' });
+  await oldRunner.event('install');
+  const next = await workerHarness('accounts-public/sw.js', {}, { stores, version: 'latest', publicAssets: shellAssets });
+  await next.event('install'); assert.equal(next.updates(), 0);
+  assert.equal(stores.has('aula-shell-previous'), true);
+  await next.event('message', { data: { type: 'activate-update' } }); await next.event('activate');
+  assert.equal(stores.has('aula-shell-previous'), false);
+  const newRunner = await workerHarness('dist/runner-sw.js', {}, { stores, runnerVersion: 'latest' });
+  await newRunner.event('install'); await newRunner.event('activate');
+  assert.equal(stores.has('aula-runner-shell-previous'), false);
+  assert.equal(stores.has('aula-shell-latest'), true);
+  assert.equal(await (await python.match('runtime')).text(), 'Python descargado');
+  assert.equal(local.getItem('aula-answer:student:one'), before);
+  const reboot = new OfflineWorkspace(indexedStore(database)); await reboot.load();
+  assert.equal((await reboot.read(null, 'me')).profile.id, profile.id);
+  assert.deepEqual((await reboot.read(profile, 'activity-open', { assignmentId: 'one' })).answer, data.answer);
+  for (const path of ['/', '/code-editor.js', '/vendor/code-editor.js', '/theme.js', '/worksheet.js']) {
+    assert.ok(await next.event('fetch', { request: { method: 'GET', url: 'https://app.test' + path, ...(path === '/' ? { mode: 'navigate' } : {}) } }));
+  }
+  assert.ok(await newRunner.event('fetch', { request: { method: 'GET', url: 'https://app.test/runner-theme-v1.css' } }));
+  assert.equal(next.network.length + newRunner.network.length, 0);
 });

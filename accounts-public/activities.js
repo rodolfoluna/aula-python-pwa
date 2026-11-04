@@ -38,6 +38,14 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     for (const id of ['feedback-panel', 'review-form', 'review-history', 'back-current-review']) $('#' + id).hidden = true;
   }
   function canLeave() { if (navigation.restoring) return true; if (sync?.inFlight) { notice('Espera a que termine el guardado antes de cambiar de actividad.', true); return false; } if (reviewDirty) return confirm('Hay comentarios o una calificación sin guardar. ¿Salir y descartar esos cambios?'); return !(sync?.dirty || draftDirty) || confirm('Hay cambios sin guardar en el servidor. Se conserva la copia local. ¿Quieres salir de esta actividad?'); }
+  function canReload() {
+    if (runnerBusy) { notice('Espera a que termine la ejecución o detén el programa antes de actualizar la app.', true); return false; }
+    if (sync?.dirty) {
+      sync.cache();
+      if (sync.cacheFailed) { notice('No se puede actualizar todavía: no hay espacio para conservar tu avance en este equipo. Guarda con conexión antes de actualizar; mantén esta ventana abierta.', true); return false; }
+    }
+    return canLeave();
+  }
   const runnerUnavailable = () => new URL(getRunnerOrigin()).protocol === 'https:' ? 'La consola Python no respondió. Vuelve a abrir la actividad; si continúa, avisa al profesor.' : 'La consola no respondió. Inicia npm run dev en otra terminal y vuelve a abrir la actividad.';
   function startRunner(student) {
     frame?.remove(); clearTimeout(runnerTimer); runnerReady = false; runnerBusy = false; queued = null;
@@ -272,7 +280,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   return {
     current: () => opened ? { assignmentId: opened.assignment.id, sync, writable: opened.writable } : null,
     syncControls,
-    canReload: canLeave,
+    canReload,
     async setSession(value) {
       const nextKey = value ? value.id + ':' + value.must_change_password : '';
       if (nextKey !== sessionKey) {

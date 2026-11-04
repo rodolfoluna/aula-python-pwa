@@ -130,3 +130,13 @@ El botón de tema del encabezado alterna entre claro y oscuro. La primera visita
 Las actividades de archivos muestran el ejercicio actual y el total, una lista de ejercicios y un explorador del proyecto compartido. El editor Python usa CodeMirror con resaltado, números de línea, plegado, búsqueda, cierre de paréntesis, sangría y sugerencias de palabras de Python y nombres locales. No incorpora un servidor de lenguaje ni extensiones de VS Code. Ctrl+Espacio abre sugerencias, Ctrl+F busca, Ctrl+S guarda y Mayús+Enter ejecuta el archivo actual. Esc seguido de Tab permite salir del editor con el teclado. El cursor y el historial de deshacer se conservan al cambiar de archivo o ejercicio dentro del espacio abierto.
 
 Los recursos del editor se incluyen en el repositorio y en la caché pública de la PWA. Para reconstruirlos tras actualizar dependencias: `npm run build:editor`. La compilación usa las versiones de `package-lock.json` y genera el aviso de licencias en `accounts-public/vendor/code-editor.LICENSE.txt`; Render sirve el resultado sin necesitar dependencias de desarrollo.
+
+### Verificación de actualización y avances sin conexión
+
+La actualización sustituye la caché pública de la interfaz; mantiene las actividades descargadas en IndexedDB, los avances pendientes en localStorage y los paquetes de Python descargados. Se activa desde «Actualizar app» cuando la descarga de la versión nueva está completa. No requiere reinstalar ni borrar datos del navegador.
+
+Antes de recargar, la app vuelve a guardar el avance pendiente en el dispositivo. Si falla ese guardado local, impide actualizar y pide guardar con conexión manteniendo la ventana abierta. También espera a que finalice un guardado y bloquea la recarga durante una ejecución de Python.
+
+Pruebas automatizadas: `tests/pwa-upgrade.test.mjs` recorre actualización, nueva instancia de la app con la red rechazada, recuperación de notebooks y proyectos antiguos, edición offline y una sola sincronización al reconectar. También prueba el almacenamiento lleno y los guardados o programas en curso. `tests/pwa-offline.test.mjs` ejecuta los eventos de instalación y activación de ambos service workers y comprueba que conserven las actividades, los borradores y Python. `tests/runtime.test.mjs` reinicia el motor Python real con el acceso a red bloqueado y ejecuta archivos, input y gráficas.
+
+Estas pruebas no certifican el comportamiento de una instalación o dispositivo concreto. Las actividades y Python deben haberse preparado con conexión antes de trabajar offline. La entrega final requiere conexión; cerrar sesión o borrar los datos del navegador desactiva el acceso a las actividades preparadas.
