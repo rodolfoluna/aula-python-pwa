@@ -10,6 +10,7 @@ export function createActivitiesService(store, clock = () => Date.now()) {
     const assignment = await store.assignmentMeta(id); if (!assignment) throw denied();
     if (profile.role === 'teacher') { if (assignment.teacher_id !== profile.id) throw denied(); }
     else if (!await store.isMember(assignment.group_id, profile.id)) throw denied();
+    if (profile.role === 'student') assignment.individual_due_at = await store.studentDeadline(id, profile.id);
     if (withSnapshot) {
       let snapshot = templates.get(id);
       if (!snapshot) { snapshot = (await store.assignment(id))?.snapshot; if (!snapshot) throw denied(); templates.set(id, snapshot); }
@@ -18,7 +19,7 @@ export function createActivitiesService(store, clock = () => Date.now()) {
     return assignment;
   }
   const writable = (assignment, submission) => {
-    const deadline = submission?.returned_at ? submission.correction_due_at : assignment.due_at;
+    const deadline = assignment.individual_due_at || (submission?.returned_at ? submission.correction_due_at : assignment.due_at);
     return !submission?.submitted_at && !assignment.closed && (!deadline || Date.parse(deadline) > clock());
   };
   return {
@@ -51,6 +52,7 @@ export function createActivitiesService(store, clock = () => Date.now()) {
       const assignment = await assigned(profile, id);
       if (profile.role === 'teacher' && !studentId) throw new AccountError(400, 'Selecciona un alumno para revisar.');
       const target = profile.role === 'student' ? profile.id : studentId;
+      if (profile.role === 'teacher') assignment.individual_due_at = await store.studentDeadline(id, target);
       const student = profile.role === 'student' ? profile : await store.profile(target);
       if (!student || student.role !== 'student' || student.teacher_id !== assignment.teacher_id) throw denied();
       const submission = await store.submission(id, target);
@@ -129,6 +131,15 @@ export function createActivitiesService(store, clock = () => Date.now()) {
       const updated = await store.setAssignmentDeadline(assignment.id, profile.id, assignment.due_at, new Date(data.dueAt).toISOString());
       if (!updated) throw new AccountError(409, 'La fecha límite cambió en otra sesión. Actualiza la lista antes de intentarlo de nuevo.');
       return updated;
+    },
+    async setStudentDeadline(profile, data) {
+      if (profile.role !== 'teacher') throw new AccountError(403, 'Solo el profesor puede cambiar el plazo individual.');
+      const assignment = await assigned(profile, data.assignmentId, false), student = await store.profile(data.studentId);
+      if (!student || student.role !== 'student' || student.teacher_id !== profile.id || !student.active || !await store.isMember(assignment.group_id, student.id)) throw denied();
+      if (assignment.closed) throw new AccountError(409, 'Reabre la actividad antes de cambiar el plazo individual.');
+      if ((await store.submissionState(assignment.id, student.id))?.submitted_at) throw new AccountError(409, 'La respuesta ya fue entregada. Usa Devolver para correcciones para habilitar otra entrega.');
+      if (data.dueAt !== null && (typeof data.dueAt !== 'string' || !Number.isFinite(Date.parse(data.dueAt)) || Date.parse(data.dueAt) <= clock())) throw new AccountError(400, 'Selecciona una fecha y hora futuras para este alumno.');
+      return store.setStudentDeadline(assignment.id, student.id, profile.id, data.dueAt === null ? null : new Date(data.dueAt).toISOString());
     },
     async close(profile, data) { const assignment = await assigned(profile, data.assignmentId, false); if (profile.role !== 'teacher' || typeof data.closed !== 'boolean') throw new AccountError(403, 'Solo el profesor puede cerrar actividades.'); return store.setAssignmentClosed(assignment.id, data.closed); },
   };

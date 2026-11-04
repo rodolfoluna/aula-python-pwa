@@ -163,3 +163,11 @@ Los alumnos reciben la fecha actualizada al recargar o volver a abrir con conexi
 La API comprueba al profesor propietario, exige una fecha y hora válidas y evita
 sobrescribir cambios simultáneos del plazo. Usa la columna `due_at` existente;
 no requiere migración SQL.
+
+## Plazo individual antes de entregar
+
+Aplica `supabase/migrations/202611040001_student_deadlines.sql` después de las migraciones anteriores (incluida `202611030001_conflict_sqlstate.sql`). Conserva actividades, respuestas, revisiones y permisos existentes. Crea una tabla de excepciones por alumno y actualiza la comprobación del plazo en el guardado y el resumen de avances.
+
+En **Ver avances**, usa **Cambiar fecha individual** junto al alumno. Está disponible sin iniciar, en progreso y en corrección, incluso cuando venció el plazo del grupo. La nueva fecha debe ser futura; permite quitar la excepción para recuperar el plazo general o de corrección. No crea una respuesta ni altera su revisión, código o estado de entrega. La actividad debe estar abierta y el alumno activo y en el grupo. Una entrega ya realizada se habilita con **Devolver para correcciones**; esa devolución sustituye cualquier excepción previa por el nuevo plazo de corrección.
+
+El alumno ve el plazo individual en su catálogo y al abrir la actividad. Debe actualizar con conexión; si necesita usar el nuevo plazo offline, debe volver a preparar las actividades. Una copia descargada anteriormente conserva el plazo que conocía hasta actualizarse.

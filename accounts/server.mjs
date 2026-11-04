@@ -101,6 +101,7 @@ export function createAccountsServer({ store, configError, secure = false, origi
       if (path === '/api/answer-review' && req.method === 'POST') { json(res, 200, { review: await activities.review(profile, await body(req)) }); return; }
       if (path === '/api/assignment-delete' && req.method === 'POST') { json(res, 200, await activities.deleteAssignment(profile, await body(req))); return; }
       if (path === '/api/assignment-deadline' && req.method === 'POST') { json(res, 200, { assignment: await activities.setDeadline(profile, await body(req)) }); return; }
+      if (path === '/api/student-deadline' && req.method === 'POST') { json(res, 200, { deadline: await activities.setStudentDeadline(profile, await body(req)) }); return; }
       if (path === '/api/assignment-state' && req.method === 'POST') { json(res, 200, { assignment: await activities.close(profile, await body(req)) }); return; }
       if (path === '/api/roster' && req.method === 'GET') {
         const [students, groups] = await Promise.all([store.listStudents(profile.id), store.listGroups(profile.id)]);

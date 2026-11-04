@@ -9,6 +9,7 @@ const date = value => value ? new Date(value).toLocaleString('es-MX') : 'Sin fec
 const reviewedCurrent = sub => sub?.reviewed_at && sub?.submitted_at && Date.parse(sub.reviewed_at) >= Date.parse(sub.submitted_at);
 const answerStatus = sub => !sub ? 'Sin iniciar' : sub.submitted_at ? (reviewedCurrent(sub) ? 'Revisada' : 'Entregada') : sub.returned_at ? 'Devuelta para correcciones' : 'En progreso';
 const gradeText = sub => sub?.grade == null ? 'Sin calificación' : `${Number(sub.grade)}/100${reviewedCurrent(sub) ? '' : ' · Nota de la revisión anterior (provisional)'}`;
+const deadlineFor = (assignment, sub) => assignment.individual_due_at || (sub?.returned_at && !sub.submitted_at ? sub.correction_due_at : assignment.due_at);
 export function setupActivities({ api, perform, getGroups, getProfile, getRunnerOrigin, beforeOpen = async () => {} }) {
   const progressBudget = new PollBudget(), progressTokens = new Map(), progressFlights = new Map();
   let sessionKey, profile, view = 'roster', catalog = { activities: [], assignments: [] }, draft, draftDirty = false, reviewDirty = false, worksheet, sync, opened, progressId, reviewedStudent, ticker, frame, runnerReady, runnerBusy, queued, runnerTimer, cacheKey, epoch = 0;
@@ -106,6 +107,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     const own = profile.role === 'student', ownerId = profile.id, template = data.assignment.snapshot, currentEpoch = epoch;
     $('#activity-workspace').hidden = false; screen('work'); $('#teacher-draft-fields').hidden = true; $('#answer-controls').hidden = !own;
     $('#work-title').textContent = `${template.title} · versión ${data.assignment.activity_version}${!own && data.student ? ' · ' + data.student.control + ' · ' + data.student.name : ''}`; renderMarkdown($('#work-instructions'), template.instructions);
+    if (data.assignment.individual_due_at) $('#work-instructions').append(element('p', 'Tu fecha límite individual: ' + date(data.assignment.individual_due_at), 'tag'));
     $('#work-readonly').hidden = data.writable;
     let answer = data.answer;
     if (own) {
@@ -183,6 +185,20 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     }); };
     card.append(form); input.focus();
   }
+  function studentDeadlineForm(row, assignment, student) {
+    if (row.querySelector('form')) { row.querySelector('input').focus(); return; }
+    const form = element('form', undefined, 'assignment-deadline-form'), label = element('label', 'Fecha límite individual (hora de este equipo)'), input = element('input');
+    input.type = 'datetime-local'; input.required = true;
+    const previous = Date.parse(deadlineFor({ ...assignment, individual_due_at: student.individual_due_at }, student.submission));
+    const value = new Date(Math.max(previous || 0, Date.now() + 86400000)); value.setMinutes(value.getMinutes() - value.getTimezoneOffset()); input.value = value.toISOString().slice(0, 16); label.append(input);
+    const save = element('button', 'Guardar fecha individual', 'primary'); save.type = 'submit';
+    const update = async dueAt => { await api('student-deadline', { assignmentId: assignment.id, studentId: student.id, dueAt }); await showProgress(assignment.id); notice('Plazo individual actualizado. El alumno debe actualizar o volver a abrir la actividad con conexión; si la tiene descargada, debe prepararla de nuevo para usar el nuevo plazo offline.'); };
+    form.append(element('h4', 'Cambiar fecha de ' + student.name), label, element('p', 'Solo cambia el plazo de este alumno, aunque aún no haya iniciado ni entregado. El plazo del grupo y sus avances se conservan.', 'muted'), save);
+    if (student.individual_due_at) form.append(button('Quitar plazo individual', () => update(null)));
+    form.append(button('Cancelar', () => form.remove()));
+    form.onsubmit = event => { event.preventDefault(); perform(() => update(new Date(input.value).toISOString())); };
+    row.append(form); input.focus();
+  }
   async function refresh() {
     const actorId = profile?.id, data = await api('activities'); if (!profile || profile.id !== actorId) return; catalog = data; $('#assignments-list').replaceChildren(); $('#activity-drafts').replaceChildren();
     if (profile.role === 'teacher') {
@@ -191,7 +207,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     }
     for (const assignment of catalog.assignments || []) {
       const card = element('article', undefined, 'card'), group = getGroups().find(group => group.id === assignment.group_id);
-      card.append(element('h3', assignment.title || 'Actividad'), element('p', `${assignment.group?.name || group?.name || 'Mi grupo'} · v${assignment.activity_version} · ${assignment.closed ? 'Cerrada · ' : ''}${answerStatus(assignment.submission)}`, 'muted'), element('p', 'Límite: ' + date(assignment.submission?.returned_at && !assignment.submission?.submitted_at ? assignment.submission.correction_due_at : assignment.due_at), 'muted'));
+      card.append(element('h3', assignment.title || 'Actividad'), element('p', `${assignment.group?.name || group?.name || 'Mi grupo'} · v${assignment.activity_version} · ${assignment.closed ? 'Cerrada · ' : ''}${answerStatus(assignment.submission)}`, 'muted'), element('p', (assignment.individual_due_at ? 'Tu límite individual: ' : 'Límite: ') + date(deadlineFor(assignment, assignment.submission)), 'muted'));
       if (profile.role === 'student' && assignment.submission?.reviewed_at) card.append(element('p', gradeText(assignment.submission), 'grade-summary'));
       if (profile.role === 'teacher') card.append(button('Cambiar fecha límite', () => deadlineForm(card, assignment)), button('Eliminar asignación', async () => {
         if (!confirm('¿Eliminar esta asignación del grupo? Se eliminarán sus avances, entregas y revisiones. La plantilla se conserva.')) return;
@@ -226,14 +242,18 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     progressBudget.completed(data.unchanged); if (data.token) progressTokens.set(id, data.token);
     $('#progress-state').textContent = `Última comprobación: ${new Date().toLocaleTimeString('es-MX')}. Actualización automática cada ${progressBudget.delay / 1000} s según cambios; también puedes actualizar ahora.`;
     $('#activity-progress').hidden = $('#activities-hub').dataset.screen !== 'progress'; if (data.unchanged) return; $('#progress-list').replaceChildren();
-    for (const student of data.students) { const row = element('div', undefined, 'progress-row'); row.append(element('strong', `${student.control} · ${student.name}`), element('span', `${answerStatus(student.submission)}${student.submission ? ' · ' + date(student.submission.submitted_at || student.submission.updated_at) : ''}${student.submission?.reviewed_at ? ' · ' + gradeText(student.submission) : ''}`), button('Ver último avance', () => openAnswer(id, student.id))); $('#progress-list').append(row); }
+    for (const student of data.students) {
+      const row = element('div', undefined, 'progress-row'); row.append(element('strong', `${student.control} · ${student.name}`), element('span', `${answerStatus(student.submission)}${student.submission ? ' · ' + date(student.submission.submitted_at || student.submission.updated_at) : ''}${student.submission?.reviewed_at ? ' · ' + gradeText(student.submission) : ''}`), element('span', (student.individual_due_at ? 'Plazo individual: ' : 'Límite: ') + date(deadlineFor({ ...data.assignment, individual_due_at: student.individual_due_at }, student.submission))), button('Ver último avance', () => openAnswer(id, student.id)));
+      if (student.active !== false && !student.submission?.submitted_at && !data.assignment.closed) row.append(button('Cambiar fecha individual', () => studentDeadlineForm(row, data.assignment, student)));
+      $('#progress-list').append(row);
+    }
     if (!data.students.length) $('#progress-list').append(element('p', 'Este grupo todavía no tiene alumnos.'));
     })();
     progressFlights.set(id, request);
     try { return await request; } finally { if (progressFlights.get(id) === request) progressFlights.delete(id); }
   }
   const online = () => window.navigator?.onLine !== false;
-  const watchingProgress = () => profile?.role === 'teacher' && progressId && !$('#activities-hub').hidden && $('#activities-hub').dataset.screen === 'progress' && !document.hidden && online();
+  const watchingProgress = () => profile?.role === 'teacher' && progressId && !$('#activities-hub').hidden && $('#activities-hub').dataset.screen === 'progress' && !$('#progress-list form') && !document.hidden && online();
   function autoSave(keepalive = false) { if (opened?.writable && online() && sync?.dirty && !sync.conflict && !sync.blocked && !sync.inFlight && Date.now() >= sync.nextRetryAt) sync.flush(false, { keepalive }).then(syncControls).catch(syncControls); }
   const progressTimer = setInterval(() => { if (watchingProgress() && progressBudget.due()) showProgress(progressId, true).catch(() => {}); }, 15000);
   document.addEventListener('visibilitychange', () => { if (document.hidden) autoSave(true); else { autoSave(); if (watchingProgress() && progressBudget.due()) showProgress(progressId, true).catch(() => {}); } });

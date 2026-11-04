@@ -15,7 +15,7 @@ function fixture(errorCode) {
       if (table === 'aula_groups') data = groups;
       if (table === 'aula_memberships') data = [{ group_id: 'group-a', student_id: 'student' }];
       if (table === 'aula_assignments') data = method === 'PATCH' ? { id: 'assignment-a', closed: true, due_at: null } : assignments;
-      if (table === 'aula_submissions') data = [];
+      if (table === 'aula_submissions' || table === 'aula_student_deadlines') data = [];
       return new Response(JSON.stringify(data), { headers: { 'content-type': 'application/json' } });
     } } }),
   });

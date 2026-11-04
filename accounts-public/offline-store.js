@@ -52,7 +52,7 @@ export class OfflineWorkspace {
     const result = await this.store.get(this.key(profile.id, path, data)); if (!result) return null;
     const copy = structuredClone(result);
     if (path === 'activity-open') {
-      const deadline = copy.submission?.returned_at ? copy.submission.correction_due_at : copy.assignment.due_at;
+      const deadline = copy.assignment.individual_due_at || (copy.submission?.returned_at ? copy.submission.correction_due_at : copy.assignment.due_at);
       copy.writable = !copy.assignment.closed && !copy.submission?.submitted_at && (!deadline || Date.parse(deadline) > Date.now());
       copy.offline = true;
     }

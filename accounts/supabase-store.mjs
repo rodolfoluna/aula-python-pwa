@@ -85,8 +85,17 @@ export function createSupabaseStore(env = process.env, { clientFactory = createC
       if (!memberships.length) return [];
       const assignments = result(await admin.from('aula_assignments').select('id,group_id,activity_version,closed,due_at,created_at,title:snapshot->>title,group:aula_groups(name)').in('group_id', memberships.map(row => row.group_id)).order('created_at', { ascending: false }));
       if (!assignments.length) return [];
-      const submissions = result(await admin.from('aula_submissions').select('assignment_id,revision,updated_at,submitted_at,grade,reviewed_at,returned_at,correction_due_at').eq('student_id', studentId).in('assignment_id', assignments.map(row => row.id)));
-      return assignments.map(assignment => ({ ...assignment, submission: submissions.find(row => row.assignment_id === assignment.id) || null }));
+      const ids = assignments.map(row => row.id);
+      const [submissions, deadlines] = await Promise.all([
+        admin.from('aula_submissions').select('assignment_id,revision,updated_at,submitted_at,grade,reviewed_at,returned_at,correction_due_at').eq('student_id', studentId).in('assignment_id', ids).then(result),
+        admin.from('aula_student_deadlines').select('assignment_id,due_at').eq('student_id', studentId).in('assignment_id', ids).then(result)
+      ]);
+      return assignments.map(assignment => ({ ...assignment, individual_due_at: deadlines.find(row => row.assignment_id === assignment.id)?.due_at || null, submission: submissions.find(row => row.assignment_id === assignment.id) || null }));
+    },
+    async studentDeadline(assignmentId, studentId) { return result(await admin.from('aula_student_deadlines').select('due_at').eq('assignment_id', assignmentId).eq('student_id', studentId).maybeSingle())?.due_at || null; },
+    async setStudentDeadline(assignmentId, studentId, teacherId, dueAt) {
+      const { data, error } = await admin.rpc('aula_set_student_deadline', { assignment_key: assignmentId, student_key: studentId, teacher_key: teacherId, deadline: dueAt });
+      if (error) throw Object.assign(new Error(error.message), { status: error.code === '42501' ? 403 : error.code === 'PT409' ? 409 : error.code === '22023' ? 400 : 500 }); return data;
     },
     async submission(assignmentId, studentId) { return result(await admin.from('aula_submissions').select('*').eq('assignment_id', assignmentId).eq('student_id', studentId).maybeSingle()); },
     async submissionState(assignmentId, studentId) { return result(await admin.from('aula_submissions').select('revision,submitted_at,returned_at,correction_due_at,last_save_id,last_save_receipt').eq('assignment_id', assignmentId).eq('student_id', studentId).maybeSingle()); },

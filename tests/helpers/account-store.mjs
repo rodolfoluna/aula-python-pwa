@@ -4,7 +4,7 @@ import { applyAnswerPatch } from '../../dist/answer-patch.js';
 const copy = value => value && structuredClone(value);
 export function memoryAccountStore() {
   const profiles = new Map(), identities = new Map(), groups = new Map(), memberships = new Map();
-  const activities = new Map(), assignments = new Map(), submissions = new Map(), reviews = new Map();
+  const activities = new Map(), assignments = new Map(), submissions = new Map(), reviews = new Map(), deadlines = new Map();
   function passwordRecord(password) { const salt = randomBytes(16); return { salt, digest: scryptSync(password, salt, 32) }; }
   return {
     async login(email, password) { const account = identities.get(email); if (!account || !timingSafeEqual(account.digest, scryptSync(password, account.salt, 32))) throw new Error('Invalid credentials'); return account.id; },
@@ -33,7 +33,9 @@ export function memoryAccountStore() {
     async listAssignments(id) { return [...assignments.values()].filter(row => row.teacher_id === id).map(row => ({ ...copy(row), title: row.snapshot.title })); },
     async createAssignments(rows) { if (rows.some(row => [...assignments.values()].some(old => old.activity_id === row.activity_id && old.group_id === row.group_id && old.activity_version === row.activity_version))) throw Object.assign(new Error('Versión ya asignada'), { status: 409 }); return rows.map(row => { const value = { ...copy(row), id: randomUUID(), closed: false }; assignments.set(value.id, value); return copy(value); }); },
     async isMember(groupId, studentId) { return memberships.has(groupId + ':' + studentId); },
-    async studentAssignments(id) { return [...assignments.values()].filter(row => memberships.has(row.group_id + ':' + id)).map(row => ({ ...copy(row), title: row.snapshot.title, submission: copy(submissions.get(row.id + ':' + id)) || null })); },
+    async studentAssignments(id) { return [...assignments.values()].filter(row => memberships.has(row.group_id + ':' + id)).map(row => ({ ...copy(row), individual_due_at: deadlines.get(row.id + ':' + id) || null, title: row.snapshot.title, submission: copy(submissions.get(row.id + ':' + id)) || null })); },
+    async studentDeadline(assignmentId, studentId) { return deadlines.get(assignmentId + ':' + studentId) || null; },
+    async setStudentDeadline(assignmentId, studentId, teacherId, dueAt) { const key = assignmentId + ':' + studentId; if (dueAt) deadlines.set(key, dueAt); else deadlines.delete(key); return { due_at: dueAt }; },
     async submission(assignmentId, studentId) { return copy(submissions.get(assignmentId + ':' + studentId)); },
     async submissionState(assignmentId, studentId) { const row = submissions.get(assignmentId + ':' + studentId); if (!row) return; const { answer, ...rest } = row; return copy(rest); },
     async progressSummary(assignmentId, teacherId, knownToken) {
@@ -41,7 +43,7 @@ export function memoryAccountStore() {
       if (assignment?.teacher_id !== teacherId) throw Object.assign(new Error('Actividad sin acceso'), { status: 404 });
       const students = [...profiles.values()].filter(row => row.teacher_id === teacherId && (memberships.has(assignment.group_id + ':' + row.id) || submissions.has(assignmentId + ':' + row.id))).map(student => {
         const current = submissions.get(assignmentId + ':' + student.id), { answer, last_save_id, last_save_hash, last_save_receipt, ...summary } = current || {};
-        return { ...copy(student), submission: current ? copy(summary) : null };
+        return { ...copy(student), individual_due_at: deadlines.get(assignmentId + ':' + student.id) || null, submission: current ? copy(summary) : null };
       });
       const token = createHash('md5').update(JSON.stringify([students, assignment.closed, assignment.due_at])).digest('hex');
       if (token === knownToken) return { unchanged: true, token };
@@ -72,6 +74,7 @@ export function memoryAccountStore() {
       assignments.delete(id);
       for (const [key, value] of submissions) if (value.assignment_id === id) submissions.delete(key);
       for (const [key, value] of reviews) if (value.assignment_id === id) reviews.delete(key);
+      for (const key of deadlines.keys()) if (key.startsWith(id + ':')) deadlines.delete(key);
     },
     async setAssignmentDeadline(id, teacherId, previousDueAt, dueAt) {
       const assignment = assignments.get(id);
@@ -87,7 +90,7 @@ export function memoryAccountStore() {
       const review = { id: randomUUID(), assignment_id: assignmentId, student_id: studentId, teacher_id: teacherId, submission_revision: revision, action, grade, feedback, correction_due_at: deadline, answer: copy(current.answer), submitted_at: current.submitted_at, created_at: new Date().toISOString() };
       reviews.set(review.id, review);
       Object.assign(current, { grade, feedback, reviewed_at: review.created_at, revision: revision + 1, last_save_id: null, last_save_hash: null, last_save_receipt: null });
-      if (action === 'return') Object.assign(current, { submitted_at: null, returned_at: review.created_at, correction_due_at: deadline });
+      if (action === 'return') { deadlines.delete(assignmentId + ':' + studentId); Object.assign(current, { submitted_at: null, returned_at: review.created_at, correction_due_at: deadline }); }
       return { review_id: review.id, revision: current.revision };
     },
   };

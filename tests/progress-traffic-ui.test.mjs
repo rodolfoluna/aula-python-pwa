@@ -15,7 +15,7 @@ test('el seguimiento consulta solo su pantalla visible, y se detiene al revisar 
   const profile = { id: 'teacher', role: 'teacher' }, snapshot = newActivity();
   const api = async path => {
     if (path === 'activities') return { activities: [], assignments: [{ id: 'assignment', title: 'Práctica' }] };
-    if (path === 'activity-progress') { reads++; return { token: String(reads), students: [{ id: 'student', control: '001', name: 'Ana' }] }; }
+    if (path === 'activity-progress') { reads++; return { assignment: { id: 'assignment', due_at: null, closed: false }, token: String(reads), students: [{ id: 'student', control: '001', name: 'Ana' }] }; }
     if (path === 'activity-open') return { assignment: { id: 'assignment', activity_version: 1, snapshot }, answer: initialAnswer(snapshot), revision: 0, writable: false };
     throw new Error(path);
   };
