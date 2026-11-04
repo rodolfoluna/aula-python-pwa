@@ -12,8 +12,11 @@ async function offlineWorker() {
 }
 if (typeof navigator !== 'undefined' && navigator.serviceWorker) offlineWorker().catch(() => {});
 let worker, loaded, control, inputBytes, interrupt, busy = false, student = true, output, pending, sequence = 0, timeout, killTimer, stopped = false;
+let currentItem;
+function emit(kind, data = {}) { if (currentItem?.cellId) tell('aula-cell-output', { cellId: currentItem.cellId, kind, ...data }); }
 function status(text) { $('#state').textContent = text; }
 function append(channel, text) {
+  emit('text', { channel, text });
   if (!output) return;
   const last = output.lastElementChild;
   if (last?.tagName === 'PRE' && last.className === channel) last.textContent += text;
@@ -32,9 +35,9 @@ async function initialize() {
     if (data.type === 'diagnostic') $('#diagnostics').textContent += data.text + '\n';
     if (data.type === 'ready') loaded.resolve();
     if (data.type === 'text') append(data.channel, data.text);
-    if (data.type === 'figure') { const img = document.createElement('img'); img.src = 'data:image/png;base64,' + data.data; img.alt = 'Gráfica de Python'; output?.append(img); }
-    if (data.type === 'input') { clearTimeout(timeout); $('#input-form').hidden = false; $('#input').value = ''; $('#input').focus(); status('Esperando tu respuesta…'); }
-    if (data.type === 'done') { clearTimeout(timeout); clearTimeout(killTimer); $('#input-form').hidden = true; pending?.resolve(data.ok); pending = null; }
+    if (data.type === 'figure') { const img = document.createElement('img'); img.src = 'data:image/png;base64,' + data.data; img.alt = 'Gráfica de Python'; output?.append(img); emit('figure', { data: data.data }); }
+    if (data.type === 'input') { clearTimeout(timeout); $('#input-form').hidden = false; $('#input').value = ''; $('#input').focus(); status('Esperando tu respuesta…'); emit('input'); }
+    if (data.type === 'done') { clearTimeout(timeout); clearTimeout(killTimer); $('#input-form').hidden = true; emit('done', { ok: data.ok }); pending?.resolve(data.ok); pending = null; }
     if (data.type === 'fatal') { append('stderr', data.text); loaded?.reject(new Error(data.text)); destroy(); }
   };
   worker.onerror = event => { append('stderr', event.message); destroy(); };
@@ -43,9 +46,10 @@ async function initialize() {
   try { await promise; } finally { clearTimeout(limit); }
 }
 async function execute(item) {
+  currentItem = item;
   const section = document.createElement('section'); section.className = 'run-output'; const title = document.createElement('strong'); title.textContent = item.label || 'Resultado'; section.append(title); $('#outputs').append(section); output = section;
   interrupt[0] = 0; timer();
-  const id = ++sequence; return new Promise(resolve => { pending = { resolve }; worker.postMessage({ type: 'run', id, ...item.payload }); });
+  const id = ++sequence; emit('start', { execution: id }); return new Promise(resolve => { pending = { resolve }; worker.postMessage({ type: 'run', id, ...item.payload }); });
 }
 function stop(message = 'Ejecución detenida.') {
   if (!busy) return; stopped = true; append('stderr', message + '\n');
@@ -68,17 +72,23 @@ window.addEventListener('message', async event => {
     if (event.data.type === 'aula-config') student = event.data.student !== false;
     return;
   }
+  if (event.data?.type === 'aula-input') { if (busy && !$('#input-form').hidden && typeof event.data.value === 'string') submitInput(event.data.value); return; }
+  if (event.data?.type === 'aula-stop') { stop(); return; }
+  if (event.data?.type === 'aula-reset') { $('#reset').click(); return; }
+  if (event.data?.type === 'aula-clear') { $('#clear').click(); return; }
   if (event.data?.type !== 'aula-run' || busy || !Array.isArray(event.data.items) || event.data.items.length > 100) return;
-  busy = true; stopped = false; status('Preparando ejecución…'); tell('aula-busy', { busy: true }); $('#stop').disabled = false; $('#reset').disabled = true;
+  busy = true; stopped = false; currentItem = event.data.items[0]; status('Preparando ejecución…'); tell('aula-busy', { busy: true }); $('#stop').disabled = false; $('#reset').disabled = true; $('#clear').disabled = true;
   try {
     await initialize(); let ok = true;
     for (const item of event.data.items) { if (stopped || !await execute(item)) { ok = false; break; } }
     status(ok ? 'Ejecución completada' : 'Ejecución detenida o con error · Revisa la salida');
-  } catch (error) { const pre = document.createElement('pre'); pre.className = 'stderr'; pre.textContent = error.message; $('#outputs').append(pre); status('No se pudo iniciar Python'); }
-  finally { busy = false; $('#stop').disabled = true; $('#reset').disabled = false; tell('aula-busy', { busy: false }); }
+  } catch (error) { const pre = document.createElement('pre'); pre.className = 'stderr'; pre.textContent = error.message; $('#outputs').append(pre); emit('text', { channel: 'stderr', text: error.message }); emit('done', { ok: false }); status('No se pudo iniciar Python'); }
+  finally { emit('settled'); currentItem = null; busy = false; $('#stop').disabled = true; $('#reset').disabled = false; $('#clear').disabled = false; tell('aula-busy', { busy: false }); }
 });
-$('#stop').onclick = () => stop(); $('#reset').onclick = () => { if (!busy) { destroy(); status('Memoria reiniciada. Las salidas anteriores se conservan.'); } };
-$('#input-form').onsubmit = event => { event.preventDefault(); const bytes = new TextEncoder().encode($('#input').value); if (bytes.length > 65536) { status('La entrada supera 64 KB'); return; } inputBytes.set(bytes); Atomics.store(control, 1, bytes.length); append('stdin', $('#input').value + '\n'); $('#input-form').hidden = true; Atomics.store(control, 0, 1); Atomics.notify(control, 0); timer(); };
+$('#stop').onclick = () => stop(); $('#reset').onclick = () => { if (!busy) { destroy(); sequence = 0; status('Memoria reiniciada. Las salidas anteriores se conservan.'); } };
+$('#clear').onclick = () => { if (!busy) { $('#outputs').replaceChildren(); output = null; status('Consola limpia. La memoria de Python se conserva.'); } };
+function submitInput(value) { const bytes = new TextEncoder().encode(value); if (bytes.length > 65536) { status('La entrada supera 64 KB'); return; } inputBytes.set(bytes); Atomics.store(control, 1, bytes.length); append('stdin', value + '\n'); $('#input-form').hidden = true; emit('input-sent'); Atomics.store(control, 0, 1); Atomics.notify(control, 0); timer(); }
+$('#input-form').onsubmit = event => { event.preventDefault(); submitInput($('#input').value); };
 for (const type of ['copy', 'cut', 'paste', 'drop']) document.addEventListener(type, event => { if (student) event.preventDefault(); }, true);
 window.addEventListener('pagehide', destroy);
-tell('aula-ready');
+tell('aula-ready', { protocol: 2 });

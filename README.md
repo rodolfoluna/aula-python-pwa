@@ -140,3 +140,11 @@ Antes de recargar, la app vuelve a guardar el avance pendiente en el dispositivo
 Pruebas automatizadas: `tests/pwa-upgrade.test.mjs` recorre actualización, nueva instancia de la app con la red rechazada, recuperación de notebooks y proyectos antiguos, edición offline y una sola sincronización al reconectar. También prueba el almacenamiento lleno y los guardados o programas en curso. `tests/pwa-offline.test.mjs` ejecuta los eventos de instalación y activación de ambos service workers y comprueba que conserven las actividades, los borradores y Python. `tests/runtime.test.mjs` reinicia el motor Python real con el acceso a red bloqueado y ejecuta archivos, input y gráficas.
 
 Estas pruebas no certifican el comportamiento de una instalación o dispositivo concreto. Las actividades y Python deben haberse preparado con conexión antes de trabajar offline. La entrega final requiere conexión; cerrar sesión o borrar los datos del navegador desactiva el acceso a las actividades preparadas.
+
+### Ejecución y salidas de actividades
+
+En las actividades de archivos hay un único botón «Ejecutar»: utiliza el archivo abierto, también al pulsar Mayús+Enter. Los demás archivos del proyecto siguen disponibles para importar módulos. La consola está unida visualmente al editor, tiene una altura compacta y permite «Limpiar consola» sin reiniciar Python ni modificar archivos.
+
+Los notebooks muestran texto, errores, gráficas y solicitudes de `input()` debajo de la celda ejecutada. Cada celda conserva su última salida al agregar o reordenar celdas; volver a ejecutarla sustituye solo su resultado. Las celdas comparten un único intérprete aislado. «Ejecutar todas» respeta el orden, «Detener» interrumpe y «Reiniciar memoria» crea una sesión Python nueva. Las salidas son temporales de la sesión: no se envían a Supabase ni forman parte del avance guardado.
+
+El protocolo de la consola incluye el identificador de celda y se acepta únicamente desde el iframe y origen previstos. Si una instalación conserva una consola anterior en caché, se mantiene visible la consola tradicional hasta que se active su actualización; no se ocultan resultados ni se eliminan avances.

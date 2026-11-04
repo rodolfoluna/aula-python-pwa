@@ -15,9 +15,11 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   const notice = (text, error = false) => { $('#activities-notice').textContent = text; $('#activities-notice').hidden = !text; $('#activities-notice').className = error ? 'error' : ''; };
   const navigation = createNavigation({ window, canLeave: () => !document.querySelector('#logout:disabled') && canLeave(), onError: error => notice(error.message, true) });
   const element = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
+  const executionOptions = { stop: () => runnerCommand('aula-stop'), reset: () => runnerCommand('aula-reset'), clear: () => runnerCommand('aula-clear'), sendInput: value => runnerCommand('aula-input', { value }) };
   function button(text, action) { const el = element('button', text); el.type = 'button'; el.onclick = () => perform(action); return el; }
   function syncControls() {
     worksheet?.syncControls();
+    worksheet?.setExecutionState($('#runner-state').textContent, !!runnerBusy);
     $('#workspace-nav').hidden = !profile || profile.role !== 'teacher' || profile.must_change_password;
     if (sync) { $('#save-answer').disabled = !opened?.writable || sync.conflict || sync.blocked || !!sync.inFlight; $('#submit-answer').disabled = $('#save-answer').disabled || window.navigator?.onLine === false; }
     document.querySelectorAll('.worksheet-run').forEach(button => { if (button.textContent.includes('Ejecutar')) button.disabled = !!runnerBusy; });
@@ -33,6 +35,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   }
   function teardown() {
     epoch++;
+    if ($('#execution-area').dataset.legacy === 'true') { notice(''); delete $('#execution-area').dataset.legacy; }
     clearInterval(ticker); clearTimeout(runnerTimer); ticker = null; frame?.remove(); frame = null; queued = null; runnerBusy = false; runnerReady = false;
     worksheet?.destroy(); worksheet = null; sync = null; opened = null; draft = null; draftDirty = false; reviewDirty = false; reviewedStudent = null; $('#activity-workspace').hidden = true; screen('catalog');
     for (const id of ['feedback-panel', 'review-form', 'review-history', 'back-current-review']) $('#' + id).hidden = true;
@@ -47,23 +50,37 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     return canLeave();
   }
   const runnerUnavailable = () => new URL(getRunnerOrigin()).protocol === 'https:' ? 'La consola Python no respondió. Vuelve a abrir la actividad; si continúa, avisa al profesor.' : 'La consola no respondió. Inicia npm run dev en otra terminal y vuelve a abrir la actividad.';
-  function startRunner(student) {
+  function startRunner(student, kind) {
+    $('#activity-workspace').dataset.kind = kind;
+    $('#execution-area').hidden = kind === 'notebook';
     frame?.remove(); clearTimeout(runnerTimer); runnerReady = false; runnerBusy = false; queued = null;
     frame = document.createElement('iframe'); frame.title = 'Consola de Python aislada'; frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms'); frame.setAttribute('allow', 'cross-origin-isolated');
     frame.src = getRunnerOrigin() + '/runner.html?parent=' + encodeURIComponent(location.origin);
     $('#runner-host').replaceChildren(frame); $('#runner-state').textContent = 'Iniciando consola aislada…';
-    runnerTimer = setTimeout(() => { if (!runnerReady) $('#runner-state').textContent = runnerUnavailable(); }, 15000);
+    runnerTimer = setTimeout(() => { if (!runnerReady) { $('#runner-state').textContent = runnerUnavailable(); syncControls(); } }, 15000);
     frame.dataset.student = String(student);
   }
   function run(items) {
     if (!items.length || runnerBusy) return;
     if (!runnerReady) { notice(runnerUnavailable(), true); return; }
-    runnerBusy = true; syncControls(); $('#runner-state').textContent = 'Ejecutando Python…'; frame.contentWindow.postMessage({ type: 'aula-run', items }, getRunnerOrigin());
+    runnerBusy = true; $('#runner-state').textContent = 'Ejecutando Python…'; syncControls(); frame.contentWindow.postMessage({ type: 'aula-run', items }, getRunnerOrigin());
   }
+  function runnerCommand(type, data = {}) { if (frame && runnerReady) frame.contentWindow.postMessage({ type, ...data }, getRunnerOrigin()); }
   window.addEventListener('message', event => {
     if (!frame || event.source !== frame.contentWindow || event.origin !== getRunnerOrigin()) return;
-    if (event.data?.type === 'aula-ready') { runnerReady = true; clearTimeout(runnerTimer); $('#runner-state').textContent = 'Consola lista'; frame.contentWindow.postMessage({ type: 'aula-config', student: frame.dataset.student === 'true', theme: document.documentElement.dataset.theme || 'light' }, getRunnerOrigin()); }
-    if (event.data?.type === 'aula-busy') { runnerBusy = event.data.busy === true; $('#runner-state').textContent = runnerBusy ? 'Ejecutando Python…' : 'Ejecución terminada. Revisa la consola.'; syncControls(); }
+    if (event.data?.type === 'aula-ready') {
+      runnerReady = true; clearTimeout(runnerTimer); $('#runner-state').textContent = 'Consola lista';
+      if ($('#activity-workspace').dataset.kind === 'notebook' && event.data.protocol !== 2) {
+        $('#execution-area').hidden = false;
+        $('#execution-area').dataset.legacy = 'true';
+        notice('La consola se está actualizando. Vuelve a actividades y abre de nuevo este notebook para ver las salidas bajo cada celda. Si el aviso continúa, cierra las otras ventanas de Aula Python y vuelve a abrir con conexión. Tus avances se conservan.');
+      } else if ($('#execution-area').dataset.legacy === 'true') {
+        delete $('#execution-area').dataset.legacy; $('#execution-area').hidden = $('#activity-workspace').dataset.kind === 'notebook'; notice('');
+      }
+      frame.contentWindow.postMessage({ type: 'aula-config', student: frame.dataset.student === 'true', theme: document.documentElement.dataset.theme || 'light' }, getRunnerOrigin()); syncControls();
+    }
+    if (event.data?.type === 'aula-busy') { runnerBusy = event.data.busy === true; $('#runner-state').textContent = runnerBusy ? 'Ejecutando Python…' : 'Ejecución terminada. Revisa los resultados.'; syncControls(); }
+    if (event.data?.type === 'aula-cell-output') worksheet?.receiveOutput(event.data);
   });
   window.addEventListener('aula-theme-change', () => { if (frame && runnerReady) frame.contentWindow.postMessage({ type: 'aula-theme', theme: document.documentElement.dataset.theme }, getRunnerOrigin()); });
   function cacheDraft() {
@@ -77,7 +94,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     $('#activity-workspace').hidden = false; screen('work'); $('#teacher-draft-fields').hidden = false; $('#answer-controls').hidden = true; $('#work-readonly').hidden = true;
     $('#work-title').textContent = draft.id ? 'Editar plantilla · versión ' + draft.version : 'Crear actividad'; $('#activity-title').value = draft.title; $('#activity-instructions').value = draft.instructions;
     $('#draft-state').textContent = draftDirty ? 'Borrador local recuperado; todavía no está guardado en Supabase.' : 'Guarda antes de asignar a un grupo.';
-    $('#work-instructions').replaceChildren(); worksheet = createWorksheet($('#worksheet'), { activity: draft, role: 'teacher', onChange: cacheDraft, onSave: () => $('#save-activity').click(), run, notice }); startRunner(false); syncControls();
+    $('#work-instructions').replaceChildren(); worksheet = createWorksheet($('#worksheet'), { ...executionOptions, activity: draft, role: 'teacher', onChange: cacheDraft, onSave: () => $('#save-activity').click(), run, notice }); startRunner(false, draft.kind); syncControls();
     navigation.record('draft:' + (activity.id || activity.kind), () => showDraft(activity), replace);
   }
   async function openAnswer(assignmentId, studentId, force = false, discardLocal = false) {
@@ -101,8 +118,8 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
       ticker = setInterval(() => { if (!document.hidden) autoSave(); }, 60000);
       ticker.unref?.();
     }
-    worksheet = createWorksheet($('#worksheet'), { activity: template, answer, role: own ? 'student' : 'review', readonly: !data.writable,
-      onChange: () => sync?.set(answer), onSave: () => $('#save-answer').click(), run, notice }); startRunner(own); if (own && data.writable && template.kind === 'files') sync.set(answer); syncControls();
+    worksheet = createWorksheet($('#worksheet'), { ...executionOptions, activity: template, answer, role: own ? 'student' : 'review', readonly: !data.writable,
+      onChange: () => sync?.set(answer), onSave: () => $('#save-answer').click(), run, notice }); startRunner(own, template.kind); if (own && data.writable && template.kind === 'files') sync.set(answer); syncControls();
     renderFeedback(data, own);
     navigation.record('answer:' + assignmentId + ':' + (studentId || ''), () => openAnswer(assignmentId, studentId));
   }
@@ -137,7 +154,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     $('#feedback-panel').hidden = false; $('#feedback-state').textContent = `${review.action === 'return' ? 'Devuelta' : 'Revisada'} · ${review.grade == null ? 'Sin calificación' : Number(review.grade) + '/100'}`;
     renderMarkdown($('#feedback-text'), review.feedback || 'Sin comentarios.');
     $('#back-current-review').hidden = false; $('#back-current-review').onclick = () => perform(() => openAnswer(assignmentId, profile.role === 'teacher' ? studentId : null));
-    worksheet = createWorksheet($('#worksheet'), { activity: assignment.snapshot, answer: review.answer, role: 'review', readonly: true, run, notice }); startRunner(profile.role === 'student'); syncControls();
+    worksheet = createWorksheet($('#worksheet'), { ...executionOptions, activity: assignment.snapshot, answer: review.answer, role: 'review', readonly: true, run, notice }); startRunner(profile.role === 'student', assignment.snapshot.kind); syncControls();
     navigation.record('history:' + reviewId, () => showHistorical(assignmentId, studentId, reviewId));
   }
   function renderAssignmentForm() {

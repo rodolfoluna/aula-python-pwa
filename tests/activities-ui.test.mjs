@@ -30,10 +30,12 @@ test('editor de ejercicios conserva archivos y respuestas al navegar; bloquea ej
   assert.equal(Object.hasOwn(answer.project.files, 'modulo.py'), true);
   find('Agregar archivo').click(); find('Cancelar nombre').click();
   assert.equal(root.querySelector('.worksheet-filename-form'), null);
-  find('Ejecutar archivo actual').click();
+  assert.equal(root.querySelector('[aria-label="Archivo principal"]'), null);
+  assert.equal(find('Ejecutar principal'), undefined);
+  find('Ejecutar').click();
   assert.equal(executed[0].payload.entry, 'modulo.py');
   assert.equal(executed[0].payload.files['main.py'], 'print(99)');
-  find('Ejecutar principal').click(); assert.equal(executed[0].payload.entry, 'main.py');
+  find('main.py').click(); find('Ejecutar').click(); assert.equal(executed[0].payload.entry, 'main.py');
   find('main.py').click(); find('← Anterior').click(); assert.equal(root.querySelector('[aria-label="Código de main.py"]').value, 'print(99)');
   student.setReadonly(true); root.querySelectorAll('button').forEach(button => { button.disabled = false; }); student.syncControls(); assert.equal(find('Agregar archivo').disabled, true); assert.ok(changes >= 3); dom.window.close();
 });

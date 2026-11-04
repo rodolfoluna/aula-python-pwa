@@ -19,11 +19,20 @@ test('consola aislada: protocolo de origen, Python real, input, gráficas y arch
   try {
     await import('../dist/runner.js'); assert.equal(notices[0].data.type, 'aula-ready');
     send({ type: 'aula-run', items: [{ payload: { mode: 'notebook', code: 'print("origen incorrecto")' } }] }, 'http://ejemplo.invalid'); assert.equal(workers.size, 0);
-    send({ type: 'aula-run', items: [{ label: 'Datos', payload: { mode: 'notebook', code: 'valor=41' } }, { label: 'Usar variable', payload: { mode: 'notebook', code: 'print(valor+1)' } }] });
+    assert.equal(notices[0].data.protocol, 2);
+    send({ type: 'aula-run', items: [{ cellId: 'datos', label: 'Datos', payload: { mode: 'notebook', code: 'valor=41' } }, { cellId: 'suma', label: 'Usar variable', payload: { mode: 'notebook', code: 'print(valor+1)' } }] });
     await wait(() => $('#state').textContent === 'Ejecución completada'); assert.match($('#outputs').textContent, /42/); assert.doesNotMatch($('#outputs').textContent, /building the font cache/);
-    send({ type: 'aula-run', items: [{ payload: { mode: 'notebook', code: 'nombre=input("Nombre: ")\nprint("Hola",nombre)\nimport matplotlib.pyplot as plt\nplt.plot([1,2],[3,4])\nplt.show()' } }] });
-    await wait(() => !$('#input-form').hidden); $('#input').value = 'Ana'; $('#input-form').dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
+    assert.match(notices.filter(item => item.data.cellId === 'suma' && item.data.kind === 'text').map(item => item.data.text).join(''), /42/);
+    assert.equal(notices.some(item => item.data.cellId === 'datos' && item.data.kind === 'done' && item.data.ok), true);
+    send({ type: 'aula-run', items: [{ cellId: 'entrada', payload: { mode: 'notebook', code: 'nombre=input("Nombre: ")\nprint("Hola",nombre)\nimport matplotlib.pyplot as plt\nplt.plot([1,2],[3,4])\nplt.show()' } }] });
+    await wait(() => !$('#input-form').hidden);
+    assert.equal(notices.some(item => item.data.cellId === 'entrada' && item.data.kind === 'input'), true);
+    send({ type: 'aula-input', value: 'Ana' });
     await wait(() => $('#state').textContent === 'Ejecución completada'); assert.match($('#outputs').textContent, /Hola Ana/); assert.match($('#outputs img').src, /^data:image\/png;base64,iVBOR/);
+    assert.equal(notices.some(item => item.data.cellId === 'entrada' && item.data.kind === 'figure'), true);
+    $('#clear').click(); assert.equal($('#outputs').children.length, 0);
+    send({ type: 'aula-run', items: [{ cellId: 'memoria', payload: { mode: 'notebook', code: 'print(valor)' } }] });
+    await wait(() => $('#state').textContent === 'Ejecución completada'); assert.match($('#outputs').textContent, /41/);
     const previousOutputs = $('#outputs').children.length;
     send({ type: 'aula-run', items: [{ payload: { mode: 'files', entry: 'main.py', files: { 'main.py': 'from funciones import doble\nprint(doble(21))', 'funciones.py': 'def doble(x): return x*2' } } }] });
     await wait(() => $('#outputs').children.length > previousOutputs && $('#state').textContent === 'Ejecución completada'); assert.match($('#outputs').lastElementChild.textContent, /42/);
