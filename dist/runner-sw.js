@@ -1,5 +1,5 @@
 const SHELL = 'aula-runner-shell-__RUNNER_VERSION__', PYTHON = 'aula-python-0.27.7-matplotlib-v1';
-const shell = ['/runner.html', '/runner.js', '/runner.css', '/python-worker.js', '/runtime-assets.json'];
+const shell = ['/runner.html', '/runner.js', '/runner.css', '/runner-theme-v1.css', '/python-worker.js', '/runtime-assets.json'];
 let preparing;
 self.addEventListener('install', event => event.waitUntil((async () => { await (await caches.open(SHELL)).addAll(shell); })()));
 self.addEventListener('activate', event => event.waitUntil((async () => { for (const key of await caches.keys()) if (key.startsWith('aula-runner-shell-') && key !== SHELL) await caches.delete(key); await self.clients.claim(); })()));

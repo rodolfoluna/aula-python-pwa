@@ -1,5 +1,9 @@
 const parentOrigin = new URL(new URLSearchParams(location.search).get('parent') || 'http://127.0.0.1:4180').origin;
 const $ = selector => document.querySelector(selector);
+// Keep the theme in a versioned asset: a CDN may retain the original runner.css.
+if (!document.querySelector('link[href="/runner-theme-v1.css"]')) {
+  const stylesheet = document.createElement('link'); stylesheet.rel = 'stylesheet'; stylesheet.href = '/runner-theme-v1.css'; document.head.append(stylesheet);
+}
 const tell = (type, data = {}) => parent.postMessage({ type, ...data }, parentOrigin);
 let serviceWorkerReady;
 async function offlineWorker() {

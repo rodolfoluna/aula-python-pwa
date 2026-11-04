@@ -39,6 +39,6 @@ test('HTTPS publicado: cookie segura, CSRF por origen, cabeceras y secretos inac
 test('consola publicable contiene solo los archivos del ejecutor, sin cuentas ni configuración', async () => {
   await import('../scripts/build-runner.mjs');
   const files = await readdir(new URL('../build/runner/', import.meta.url));
-  assert.deepEqual(files.sort(), ['index.html', 'python-worker.js', 'runner-sw.js', 'runner.css', 'runner.html', 'runner.js', 'runtime-assets.json']);
+  assert.deepEqual(files.sort(), ['index.html', 'python-worker.js', 'runner-sw.js', 'runner-theme-v1.css', 'runner.css', 'runner.html', 'runner.js', 'runtime-assets.json']);
   assert.equal(await readFile(new URL('../build/runner/runner.js', import.meta.url), 'utf8'), await readFile(new URL('../dist/runner.js', import.meta.url), 'utf8'));
 });

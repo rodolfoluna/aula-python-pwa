@@ -21,7 +21,7 @@ export function createServer() {
       let content = await readFile(target);
       if (path === '/runner-sw.js') {
         const hash = createHash('sha256');
-        for (const file of ['runner.html', 'runner.js', 'runner.css', 'python-worker.js', 'runtime-assets.json']) hash.update(await readFile(resolve(root, file)));
+        for (const file of ['runner.html', 'runner.js', 'runner.css', 'runner-theme-v1.css', 'python-worker.js', 'runtime-assets.json']) hash.update(await readFile(resolve(root, file)));
         content = Buffer.from(content.toString().replaceAll('__RUNNER_VERSION__', hash.digest('hex').slice(0, 16)));
       }
       res.setHeader('Content-Type', (types[extname(target)] || 'application/octet-stream') + '; charset=utf-8');
