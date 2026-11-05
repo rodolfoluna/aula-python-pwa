@@ -87,6 +87,11 @@ for (const kind of ['files', 'notebook']) test(`alumno descargado: editor y Pyth
       const before = structuredClone(activities.current().sync.answer);
       runner.querySelector('#clear').click(); assert.equal(runner.querySelector('#outputs').textContent, '');
       assert.deepEqual(activities.current().sync.answer, before);
+      const destination = document.querySelector('[aria-label="Código de abierto.py"]');
+      destination.setSelectionRange(destination.value.length, destination.value.length);
+      button('Insertar desde archivo').click(); document.querySelector('.worksheet-copy-form').dispatchEvent(new window.Event('submit', { cancelable: true }));
+      assert.ok(destination.value.endsWith('print("MAIN ORIGINAL")'));
+      assert.equal(activities.current().sync.answer.project.files['main.py'], 'print("MAIN ORIGINAL")');
       button('Siguiente →').click();
       assert.match(document.querySelector('[aria-label="Código de abierto.py"]').value, /José 🐍/);
       button('main.py').click(); await run(button('Ejecutar'), runner.querySelector('#outputs'), /MAIN ORIGINAL/);

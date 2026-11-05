@@ -143,6 +143,24 @@ export function createWorksheet(root, options) {
     for (const name of Object.keys(work.files)) { const tab = button(name + (project.lockedFiles.includes(name) ? ' 🔒' : ''), () => { activeFile = name; render(); }, false, false); tab.title = name; tab.setAttribute('aria-pressed', String(name === activeFile)); tab.classList.toggle('selected', name === activeFile); tabs.append(tab); }
     explorer.append(tabs, button('Agregar archivo', () => filenameForm('Crear archivo', '', name => { if (!name) return; if (!filenameOK(name) || Object.hasOwn(work.files, name)) { notice('El nombre no es válido o ya existe.', true); return; } work.files[name] = ''; activeFile = name; changed(); }), Object.keys(work.files).length >= 600));
     const controls = el('div', 'worksheet-toolbar'), locked = !teacher && project.lockedFiles.includes(activeFile);
+    let editor;
+    const otherFiles = Object.keys(work.files).filter(name => name !== activeFile);
+    controls.append(button('Insertar desde archivo', () => {
+      if (root.querySelector('.worksheet-copy-form')) { root.querySelector('.worksheet-copy-form select').focus(); return; }
+      const cursor = editor.getCursor(), form = el('form', 'worksheet-copy-form'), label = el('label', '', 'Archivo del que copiar');
+      const source = select(otherFiles.map(name => [name, name]), otherFiles[0], 'Archivo del que copiar', () => {});
+      label.append(source);
+      const insert = el('button', '', 'Insertar código'); insert.type = 'submit';
+      form.append(el('h4', '', 'Insertar código de otro archivo'), label, el('p', 'muted', 'Se insertará todo su código en la posición del cursor del archivo abierto. El archivo de origen se conserva. Puedes deshacer con Ctrl+Z.'), insert, button('Cancelar copia', () => { form.remove(); editor.focus(); }));
+      form.onsubmit = event => {
+        event.preventDefault();
+        if (readonly || locked || source.value === activeFile || !Object.hasOwn(work.files, source.value)) return;
+        const text = work.files[source.value];
+        if (work.files[activeFile].length + text.length > 100000) { notice('La inserción supera el límite de 100 000 caracteres del archivo. Reduce el código antes de copiar.', true); return; }
+        if (editor.insertText(text, cursor)) form.remove();
+      };
+      controls.after(form); source.focus();
+    }, locked || !otherFiles.length));
     controls.append(button('Renombrar archivo', () => filenameForm('Renombrar archivo', activeFile, name => { if (!name) return; if (name === activeFile) { root.querySelector('.worksheet-filename-form')?.remove(); return; } if (!filenameOK(name) || Object.hasOwn(work.files, name)) { notice('Nombre no válido o ya existente.', true); return; } work.files[name] = work.files[activeFile]; delete work.files[activeFile]; if (work.entry === activeFile) work.entry = name; if (teacher) project.lockedFiles = project.lockedFiles.map(item => item === activeFile ? name : item); activeFile = name; changed(); }), locked));
     controls.append(button('Eliminar archivo', () => { if (!confirm(`¿Eliminar ${activeFile}?`)) return; delete work.files[activeFile]; if (teacher) project.lockedFiles = project.lockedFiles.filter(item => item !== activeFile); if (!Object.hasOwn(work.files, work.entry)) work.entry = Object.keys(work.files)[0]; activeFile = work.entry; changed(); }, locked || Object.keys(work.files).length <= 1));
     if (teacher) controls.append(button(project.lockedFiles.includes(activeFile) ? 'Desbloquear archivo' : 'Bloquear archivo', () => { project.lockedFiles = project.lockedFiles.includes(activeFile) ? project.lockedFiles.filter(name => name !== activeFile) : [...project.lockedFiles, activeFile]; changed(); }));
@@ -151,7 +169,7 @@ export function createWorksheet(root, options) {
     const code = input(work.files[activeFile], `Código de ${activeFile}`, value => { work.files[activeFile] = value; }, true, locked);
     pane.append(filebar, code); ide.append(explorer, pane);
     root.append(el('p', 'editor-help', 'Ejecutar usa el archivo abierto. Ctrl+Espacio: sugerencias · Ctrl+F: buscar · Tab: sangría · Mayús+Enter: ejecutar · Ctrl+S: guardar. Esc y luego Tab permite salir del editor.'), controls, ide);
-    editors.push(mountCodeEditor(code, { cache: editorCache, cacheKey: activeFile, onRun: () => run([{ label: activeFile, payload: { mode: 'files', files: clone(work.files), entry: activeFile } }]), onSave: () => options.onSave?.() }));
+    editor = mountCodeEditor(code, { cache: editorCache, cacheKey: activeFile, onRun: () => run([{ label: activeFile, payload: { mode: 'files', files: clone(work.files), entry: activeFile } }]), onSave: () => options.onSave?.() }); editors.push(editor);
   }
   function render() { guideOpen = root.querySelector('.exercise-guide')?.open ?? guideOpen; editors.forEach(editor => editor.destroy()); editors = []; outputViews.clear(); root.replaceChildren(); if (activity.kind === 'notebook') notebook(); else exercises(); syncKernelControls(); }
   render();

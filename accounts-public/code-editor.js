@@ -27,7 +27,17 @@ const darkTheme = [EditorView.theme({
 
 // Keep a plain field as a resilient fallback and a single source of truth for forms.
 export function mountCodeEditor(field, { onRun = () => {}, onSave = () => {}, cache, cacheKey } = {}) {
-  if (!field.ownerDocument.createRange().getClientRects) return { destroy() {} };
+  if (!field.ownerDocument.createRange().getClientRects) return {
+    getCursor: () => field.selectionEnd,
+    focus: () => field.focus(),
+    insertText(text, at = field.selectionEnd) {
+      if (field.readOnly || typeof text !== 'string') return false;
+      at = Math.max(0, Math.min(field.value.length, at));
+      field.setRangeText(text, at, at, 'end');
+      field.dispatchEvent(new field.ownerDocument.defaultView.Event('input', { bubbles: true })); field.focus(); return true;
+    },
+    destroy() {}
+  };
   const host = document.createElement('div'); host.className = 'python-editor';
   const status = document.createElement('div'); status.className = 'editor-status';
   const position = document.createElement('span'), language = document.createElement('span');
@@ -55,5 +65,15 @@ export function mountCodeEditor(field, { onRun = () => {}, onSave = () => {}, ca
   if (previous) view.scrollDOM.scrollTop = previous.scrollTop;
   const sync = () => { if (view.state.doc.toString() !== field.value) view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: field.value } }); };
   field.addEventListener('input', sync); updatePosition(view.state);
-  return { destroy() { cache?.set(cacheKey, { state: view.state.toJSON({ history: historyField }), scrollTop: view.scrollDOM.scrollTop }); window.removeEventListener('aula-theme-change', updateTheme); field.removeEventListener('input', sync); view.destroy(); host.remove(); status.remove(); } };
+  return {
+    getCursor: () => view.state.selection.main.head,
+    focus: () => view.focus(),
+    insertText(text, at = view.state.selection.main.head) {
+      if (field.readOnly || view.state.readOnly || typeof text !== 'string') return false;
+      at = Math.max(0, Math.min(view.state.doc.length, at));
+      view.dispatch({ changes: { from: at, insert: text }, selection: { anchor: at + text.length }, scrollIntoView: true, userEvent: 'input.insertFromFile' });
+      view.focus(); return true;
+    },
+    destroy() { cache?.set(cacheKey, { state: view.state.toJSON({ history: historyField }), scrollTop: view.scrollDOM.scrollTop }); window.removeEventListener('aula-theme-change', updateTheme); field.removeEventListener('input', sync); view.destroy(); host.remove(); status.remove(); }
+  };
 }
