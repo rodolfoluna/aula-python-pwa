@@ -21,6 +21,8 @@ test('importación no regenera claves de duplicados y genera contraseñas distin
   assert.equal(first.created.length, 2); assert.notEqual(first.created[0].password, first.created[1].password); assert.ok(first.created[0].password.length >= 20);
   const repeated = await service.importStudents(teacher, [{ control: '001', name: 'Ana' }]); assert.equal(repeated.created.length, 0); assert.equal(repeated.rejected.length, 1);
   assert.equal(await store.login(studentEmail('001'), first.created[0].password), first.created[0].id);
+  assert.equal((await store.studentGroups(first.created[0].id)).length, 0);
+  await service.membership(teacher, group.id, first.created[0].id, true);
   assert.equal((await store.studentGroups(first.created[0].id)).length, 1);
 });
 test('API: cambio obligatorio, permisos, sesiones revocadas y separación del ejecutor', async () => {
@@ -29,6 +31,7 @@ test('API: cambio obligatorio, permisos, sesiones revocadas y separación del ej
   const service = createAccountsService(store), group = await service.createGroup(teacher, 'Grupo A'), otherGroup = await service.createGroup(other, 'Ajeno');
   const { created } = await service.importStudents(teacher, [{ control: '0001', name: 'Ana' }], group.id);
   const student = created[0], server = createAccountsServer({ store });
+  await service.membership(teacher, group.id, student.id, true);
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   async function request(path, data, cookie, customOrigin = base) {

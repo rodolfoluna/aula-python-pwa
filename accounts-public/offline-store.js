@@ -33,6 +33,11 @@ export class OfflineWorkspace {
   enabled(profile) { return profile?.role === 'student' && this.active?.profile.id === profile.id; }
   async remember(profile, path, data, result) {
     if (!this.enabled(profile)) return;
+    if (path === 'activities') {
+      const previous = await this.store.get(this.key(profile.id, path));
+      const visible = new Set(result.assignments.map(item => item.id));
+      for (const assignment of previous?.assignments || []) if (!visible.has(assignment.id)) await this.store.delete(this.key(profile.id, 'activity-open', { assignmentId: assignment.id }));
+    }
     if (['activities', 'my-groups'].includes(path) || path === 'activity-open' && !data?.studentId) await this.store.set(this.key(profile.id, path, data), result);
     if (path === 'answer-save') {
       const key = this.key(profile.id, 'activity-open', data), saved = await this.store.get(key);
@@ -43,6 +48,12 @@ export class OfflineWorkspace {
       saved.writable = !saved.submission.submitted_at && !saved.assignment.closed;
       await this.store.set(key, saved);
     }
+  }
+  async forgetAssignment(profile, assignmentId) {
+    if (!this.enabled(profile)) return;
+    await this.store.delete(this.key(profile.id, 'activity-open', { assignmentId }));
+    const key = this.key(profile.id, 'activities'), catalog = await this.store.get(key);
+    if (catalog) { catalog.assignments = catalog.assignments.filter(item => item.id !== assignmentId); await this.store.set(key, catalog); }
   }
   async read(profile, path, data) {
     if (this.active) { this.offline = true; this.needsIdentity = true; }

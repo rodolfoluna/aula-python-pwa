@@ -18,9 +18,8 @@ export function createAccountsService(store) {
     return group;
   }
   return {
-    async importStudents(teacher, rows, groupId) {
+    async importStudents(teacher, rows) {
       if (!Array.isArray(rows) || !rows.length || rows.length > 500) throw new AccountError(400, 'Envía entre 1 y 500 alumnos.');
-      if (groupId) await requireGroup(teacher, groupId);
       const created = [], rejected = [];
       for (const [index, row] of rows.entries()) {
         let student;
@@ -31,10 +30,6 @@ export function createAccountsService(store) {
           const profile = await store.createUser({ ...student, email: studentEmail(student.control), password, role: 'student', teacherId: teacher.id });
           const record = { ...student, id: profile.id, password };
           created.push(record);
-          if (groupId) {
-            try { await store.setMembership(groupId, profile.id, true); }
-            catch { record.warning = 'Cuenta creada, pero no se pudo agregar al grupo. Puedes asignarla desde Grupos.'; }
-          }
         } catch (error) {
           rejected.push({ row: index + 1, control: student?.control || String(row?.control || ''), message: /ya está registrado|Número de control inválido|nombre debe/.test(error.message) ? error.message : 'No se pudo crear esta cuenta. Revisa Supabase antes de reintentar.' });
         }
@@ -47,10 +42,14 @@ export function createAccountsService(store) {
       if ((await store.listGroups(teacher.id)).some(group => group.name === name)) throw new AccountError(409, 'Ya existe un grupo con ese nombre.');
       return store.createGroup(teacher.id, name);
     },
-    async membership(teacher, groupId, studentId, member) {
+    async membership(teacher, groupId, studentId, member, deleteWork = false) {
       if (typeof member !== 'boolean') throw new AccountError(400, 'La asignación no es válida.');
       await requireGroup(teacher, groupId); await requireStudent(teacher, studentId);
-      await store.setMembership(groupId, studentId, member);
+      if (!member) {
+        if (deleteWork !== true) throw new AccountError(409, 'Confirma que se eliminarán los avances, entregas, revisiones y plazos individuales del alumno en este grupo.');
+        return store.removeMembership(groupId, studentId, teacher.id);
+      }
+      await store.setMembership(groupId, studentId, true);
     },
     async resetPassword(teacher, id) {
       const student = await requireStudent(teacher, id), password = temporaryPassword();

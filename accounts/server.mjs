@@ -108,9 +108,9 @@ export function createAccountsServer({ store, configError, secure = false, origi
         const memberships = await store.listMemberships(profile.id, groups);
         json(res, 200, { students, groups, memberships }); return;
       }
-      if (path === '/api/students' && req.method === 'POST') { const data = await body(req); json(res, 200, await service.importStudents(profile, data.rows, data.groupId)); return; }
+      if (path === '/api/students' && req.method === 'POST') { const data = await body(req); json(res, 200, await service.importStudents(profile, data.rows)); return; }
       if (path === '/api/groups' && req.method === 'POST') { const data = await body(req); json(res, 201, { group: await service.createGroup(profile, data.name) }); return; }
-      if (path === '/api/membership' && req.method === 'POST') { const data = await body(req); await service.membership(profile, data.groupId, data.studentId, data.member); json(res, 200, { ok: true }); return; }
+      if (path === '/api/membership' && req.method === 'POST') { const data = await body(req); const result = await service.membership(profile, data.groupId, data.studentId, data.member, data.deleteWork); json(res, 200, { ok: true, ...(result || {}) }); return; }
       if (path === '/api/reset-password' && req.method === 'POST') { const data = await body(req); const credential = await service.resetPassword(profile, data.studentId); revoke(data.studentId); json(res, 200, { credential }); return; }
       if (path === '/api/student-active' && req.method === 'POST') { const data = await body(req); await service.setActive(profile, data.studentId, data.active); revoke(data.studentId); json(res, 200, { ok: true }); return; }
       throw new AccountError(404, 'Operación no encontrada.');

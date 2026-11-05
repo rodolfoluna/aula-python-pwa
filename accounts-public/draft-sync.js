@@ -1,11 +1,12 @@
 import { answerPatch, sameAnswer } from '../dist/answer-patch.js';
 export class DraftSync {
-  constructor({ key, answer, revision, storage, save, validate = value => value, status = () => {}, delta = false, lastSaveId }) {
-    Object.assign(this, { key, answer: structuredClone(answer), base: structuredClone(answer), revision, storage, saveRequest: save, status, delta });
+  constructor({ key, answer, revision, storage, save, validate = value => value, status = () => {}, delta = false, lastSaveId, context = null }) {
+    Object.assign(this, { key, answer: structuredClone(answer), base: structuredClone(answer), revision, storage, saveRequest: save, status, delta, context });
     this.dirty = false; this.conflict = false; this.blocked = false; this.generation = 0; this.inFlight = null; this.pending = null; this.failures = 0; this.nextRetryAt = 0;
     try {
       const cached = JSON.parse(storage?.getItem(key) || 'null');
-      if (cached?.dirty) {
+      if (cached && (cached.context || null) !== context) { this.contextChanged = true; storage.removeItem(key); }
+      else if (cached?.dirty) {
         this.answer = validate(cached.answer); this.pending = delta ? cached.pending || null : null;
         if (this.pending && this.pending.payload.requestId === lastSaveId && revision === this.pending.payload.revision + 1) {
           this.base = validate(this.pending.answer); this.pending = null;
@@ -21,7 +22,7 @@ export class DraftSync {
   }
   cache() {
     try {
-      if (this.dirty) this.storage?.setItem(this.key, JSON.stringify({ answer: this.answer, revision: this.revision, dirty: true, ...(this.pending ? { pending: this.pending } : {}) }));
+      if (this.dirty) this.storage?.setItem(this.key, JSON.stringify({ answer: this.answer, revision: this.revision, context: this.context, dirty: true, ...(this.pending ? { pending: this.pending } : {}) }));
       else this.storage?.removeItem(this.key);
       this.cacheFailed = false;
     } catch { this.cacheFailed = true; }
@@ -47,6 +48,7 @@ export class DraftSync {
         this.cache(); this.notify(this.submitted ? 'Entrega confirmada por el servidor' : undefined, this.submitted ? 'saved' : undefined);
         return submission;
       } catch (error) {
+        if (error.status === 404) { this.blocked = true; this.dirty = false; this.pending = null; this.cache(); this.notify('Ya no tienes acceso a esta actividad. Se retiró su copia pendiente de este equipo.', 'error'); throw error; }
         if (error.status === 409) this.conflict = true;
         if (error.status === 403) this.blocked = true;
         this.failures++; this.nextRetryAt = Date.now() + Math.min(300000, 60000 * 2 ** (this.failures - 1));

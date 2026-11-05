@@ -28,14 +28,15 @@ export async function syncPending({ profile, storage, api, current = () => null 
         else held++;
         continue;
       }
-      const draft = new DraftSync({ key, storage, answer: data.answer, revision: data.revision, delta: true, lastSaveId: data.submission?.last_save_id,
+      const draft = new DraftSync({ key, storage, answer: data.answer, revision: data.revision, context: data.assignment.work_version || null, delta: true, lastSaveId: data.submission?.last_save_id,
         validate: value => validateAnswer(data.assignment.snapshot, value),
-        save: async payload => (await api('answer-save', { assignmentId, actorId: profile.id, ...payload }, { networkOnly: true })).submission });
+        save: async payload => (await api('answer-save', { assignmentId, actorId: profile.id, workVersion: data.assignment.work_version || null, ...payload }, { networkOnly: true })).submission });
       if (draft.conflict) { held++; continue; }
       if (draft.dirty) await draft.flush(); else draft.cache();
       saved++;
     } catch (error) {
       if (!error.status || error.status === 401) throw error;
+      if (error.status === 404) { storage.removeItem(key); continue; }
       held++;
     }
   }

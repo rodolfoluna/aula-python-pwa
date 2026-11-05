@@ -3,7 +3,7 @@ import { randomUUID, randomBytes, scryptSync, timingSafeEqual, createHash } from
 import { applyAnswerPatch } from '../../dist/answer-patch.js';
 const copy = value => value && structuredClone(value);
 export function memoryAccountStore() {
-  const profiles = new Map(), identities = new Map(), groups = new Map(), memberships = new Map();
+  const profiles = new Map(), identities = new Map(), groups = new Map(), memberships = new Map(), membershipVersions = new Map();
   const activities = new Map(), assignments = new Map(), submissions = new Map(), reviews = new Map(), deadlines = new Map();
   function passwordRecord(password) { const salt = randomBytes(16); return { salt, digest: scryptSync(password, salt, 32) }; }
   return {
@@ -16,7 +16,15 @@ export function memoryAccountStore() {
     async createGroup(teacherId, name) { const group = { id: randomUUID(), teacher_id: teacherId, name }; groups.set(group.id, group); return copy(group); },
     async listMemberships(teacherId) { return [...memberships.values()].filter(row => groups.get(row.group_id).teacher_id === teacherId).map(copy); },
     async studentGroups(studentId) { return [...memberships.values()].filter(row => row.student_id === studentId).map(row => copy(groups.get(row.group_id))); },
-    async setMembership(groupId, studentId, member) { const key = groupId + ':' + studentId; if (member) memberships.set(key, { group_id: groupId, student_id: studentId }); else memberships.delete(key); },
+    async setMembership(groupId, studentId, member) { const key = groupId + ':' + studentId; if (member && !memberships.has(key)) memberships.set(key, { group_id: groupId, student_id: studentId, work_version: membershipVersions.get(key) || null }); else if (!member) memberships.delete(key); },
+    async membership(groupId, studentId) { return copy(memberships.get(groupId + ':' + studentId)); },
+    async removeMembership(groupId, studentId, teacherId) {
+      if (groups.get(groupId)?.teacher_id !== teacherId || profiles.get(studentId)?.teacher_id !== teacherId) throw Object.assign(new Error('Sin acceso'), { status: 404 });
+      const ids = [...assignments.values()].filter(a => a.group_id === groupId).map(a => a.id); let removed = 0;
+      for (const id of ids) { const key = id + ':' + studentId; if (submissions.delete(key)) removed++; deadlines.delete(key); }
+      for (const [key, review] of reviews) if (ids.includes(review.assignment_id) && review.student_id === studentId) reviews.delete(key);
+      const key = groupId + ':' + studentId; memberships.delete(key); membershipVersions.set(key, randomUUID()); return { removedSubmissions: removed };
+    },
     async createUser({ email, password, role, teacherId, control, name }) {
       if (identities.has(email) || (control && [...profiles.values()].some(row => row.control === control))) throw new Error('Duplicate user');
       const id = randomUUID(), profile = { id, role, teacher_id: teacherId || null, control: control || null, name, active: true, must_change_password: role === 'student' };

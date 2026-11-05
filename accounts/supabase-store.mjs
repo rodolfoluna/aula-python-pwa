@@ -45,9 +45,14 @@ export function createSupabaseStore(env = process.env, { clientFactory = createC
     },
     async studentGroups(studentId) { return result(await admin.from('aula_memberships').select('aula_groups(id,name)').eq('student_id', studentId)).map(row => row.aula_groups); },
     async setMembership(groupId, studentId, member) {
-      if (member) result(await admin.from('aula_memberships').upsert({ group_id: groupId, student_id: studentId }));
+      if (member) result(await admin.from('aula_memberships').upsert({ group_id: groupId, student_id: studentId }, { ignoreDuplicates: true }));
       else result(await admin.from('aula_memberships').delete().eq('group_id', groupId).eq('student_id', studentId));
     },
+    async removeMembership(groupId, studentId, teacherId) {
+      const { data, error } = await admin.rpc('aula_remove_group_student', { group_key: groupId, student_key: studentId, teacher_key: teacherId });
+      if (error) throw Object.assign(new Error(error.message), { status: error.code === '42501' ? 404 : 500 }); return data;
+    },
+    async membership(groupId, studentId) { return result(await admin.from('aula_memberships').select('student_id,work_version').eq('group_id', groupId).eq('student_id', studentId).maybeSingle()); },
     async createUser({ email, password, role, teacherId, control, name }) {
       const data = result(await admin.auth.admin.createUser({ email, password, email_confirm: true, app_metadata: { aula_role: role, aula_teacher_id: teacherId, aula_control: control, aula_name: name } }));
       return ensureProfile(data.user);
@@ -103,8 +108,8 @@ export function createSupabaseStore(env = process.env, { clientFactory = createC
       const { data, error } = await admin.rpc('aula_progress_summary', { assignment_key: assignmentId, teacher_key: teacherId, known_token: token });
       if (error) throw Object.assign(new Error(error.message), { code: error.code, status: error.code === '42501' ? 404 : 500 }); return data;
     },
-    async saveDelta(assignmentId, studentId, revision, patch, requestId, submit) {
-      const { data, error } = await admin.rpc('aula_patch_answer', { assignment_key: assignmentId, student_key: studentId, expected_revision: revision, answer_patch: patch, request_key: requestId, final_submit: submit });
+    async saveDelta(assignmentId, studentId, revision, patch, requestId, submit, workVersion = null) {
+      const { data, error } = await admin.rpc('aula_patch_member_answer', { assignment_key: assignmentId, student_key: studentId, expected_revision: revision, answer_patch: patch, request_key: requestId, final_submit: submit, work_version: workVersion });
       if (error) throw Object.assign(new Error(error.message), { code: error.code, status: ['PT409', '40001'].includes(error.code) ? 409 : error.code === '42501' ? 403 : error.code === '22023' ? 400 : 500 }); return data;
     },
     async submissionSummaries(assignmentId) { return result(await admin.from('aula_submissions').select('student_id,revision,updated_at,submitted_at,grade,reviewed_at,returned_at,correction_due_at').eq('assignment_id', assignmentId)); },
@@ -115,8 +120,8 @@ export function createSupabaseStore(env = process.env, { clientFactory = createC
       if (error) throw Object.assign(new Error(error.message), { code: error.code, status: ['PT409', '40001'].includes(error.code) ? 409 : error.code === '42501' ? 403 : error.code === '22023' ? 400 : 500 });
       return data;
     },
-    async saveAnswer(assignmentId, studentId, revision, answer, submit) {
-      const { data, error } = await admin.rpc('aula_save_answer', { assignment_key: assignmentId, student_key: studentId, expected_revision: revision, answer_value: answer, final_submit: submit });
+    async saveAnswer(assignmentId, studentId, revision, answer, submit, workVersion = null) {
+      const { data, error } = await admin.rpc('aula_save_member_answer', { assignment_key: assignmentId, student_key: studentId, expected_revision: revision, answer_value: answer, final_submit: submit, work_version: workVersion });
       if (error) throw Object.assign(new Error(error.message), { status: ['PT409', '40001'].includes(error.code) ? 409 : error.code === '42501' ? 403 : 500 });
       return Array.isArray(data) ? data[0] : data;
     },

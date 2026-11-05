@@ -9,7 +9,7 @@ export function createActivitiesService(store, clock = () => Date.now()) {
   async function assigned(profile, id, withSnapshot = true) {
     const assignment = await store.assignmentMeta(id); if (!assignment) throw denied();
     if (profile.role === 'teacher') { if (assignment.teacher_id !== profile.id) throw denied(); }
-    else if (!await store.isMember(assignment.group_id, profile.id)) throw denied();
+    else { const membership = await store.membership(assignment.group_id, profile.id); if (!membership) throw denied(); assignment.work_version = membership.work_version || null; }
     if (profile.role === 'student') assignment.individual_due_at = await store.studentDeadline(id, profile.id);
     if (withSnapshot) {
       let snapshot = templates.get(id);
@@ -56,7 +56,7 @@ export function createActivitiesService(store, clock = () => Date.now()) {
       const student = profile.role === 'student' ? profile : await store.profile(target);
       if (!student || student.role !== 'student' || student.teacher_id !== assignment.teacher_id) throw denied();
       const submission = await store.submission(id, target);
-      if (submission) answers.set(id + ':' + target, { revision: submission.revision, answer: submission.answer });
+      if (submission && profile.role === 'student') answers.set(id + ':' + target + ':' + (assignment.work_version || ''), { revision: submission.revision, answer: submission.answer });
       const reviews = await store.reviewSummaries(id, target);
       const { answer: ignored, last_save_hash, ...summary } = submission || {};
       return { assignment, student: { id: student.id, control: student.control, name: student.name }, submission: submission ? summary : null, reviews, answer: submission?.answer || initialAnswer(assignment.snapshot), revision: submission?.revision || 0, writable: profile.role === 'student' && writable(assignment, submission) };
@@ -65,10 +65,11 @@ export function createActivitiesService(store, clock = () => Date.now()) {
       if (profile.role !== 'student') throw new AccountError(403, 'Solo el alumno puede guardar su respuesta.');
       const assignment = await assigned(profile, data.assignmentId);
       if (!Number.isInteger(data.revision) || data.revision < 0 || typeof data.submit !== 'boolean') throw new AccountError(400, 'Revisión de respuesta inválida.');
-      const current = await store.submissionState(assignment.id, profile.id), key = assignment.id + ':' + profile.id;
+      if ((data.workVersion || null) !== (assignment.work_version || null)) throw new AccountError(409, 'La pertenencia al grupo cambió. Vuelve a abrir la actividad; los trabajos eliminados del grupo no pueden restaurarse desde una copia anterior.');
+      const current = await store.submissionState(assignment.id, profile.id), key = assignment.id + ':' + profile.id + ':' + (assignment.work_version || '');
       const delta = Object.hasOwn(data, 'patch');
       if (delta && (typeof data.requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.requestId))) throw new AccountError(400, 'Identificador de guardado inválido.');
-      if (delta && current?.last_save_id === data.requestId) return store.saveDelta(assignment.id, profile.id, data.revision, data.patch, data.requestId, data.submit);
+      if (delta && current?.last_save_id === data.requestId) return store.saveDelta(assignment.id, profile.id, data.revision, data.patch, data.requestId, data.submit, assignment.work_version || null);
       if (!writable(assignment, current)) throw new AccountError(403, 'La respuesta ya fue entregada o la actividad está cerrada.');
       if ((current?.revision || 0) !== data.revision) throw new AccountError(409, 'Conflicto de revisión: hay cambios en otra sesión. Recarga antes de guardar.');
       let answer;
@@ -81,7 +82,7 @@ export function createActivitiesService(store, clock = () => Date.now()) {
           if (!sameAnswer(answer, reconstructed)) throw new Error('Los cambios contienen campos no permitidos.');
         } else answer = validateAnswer(assignment.snapshot, data.answer);
       } catch (error) { throw new AccountError(400, error.message); }
-      const receipt = delta ? await store.saveDelta(assignment.id, profile.id, data.revision, data.patch, data.requestId, data.submit) : await store.saveAnswer(assignment.id, profile.id, data.revision, answer, data.submit);
+      const receipt = delta ? await store.saveDelta(assignment.id, profile.id, data.revision, data.patch, data.requestId, data.submit, assignment.work_version || null) : await store.saveAnswer(assignment.id, profile.id, data.revision, answer, data.submit, assignment.work_version || null);
       answers.set(key, { revision: receipt.revision, answer }); return receipt;
     },
     async progress(profile, id, token) {

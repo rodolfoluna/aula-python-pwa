@@ -8,17 +8,18 @@ let moduleId = 0;
 async function setup(initialProfile) {
   const dom = new JSDOM(html, { url: 'http://127.0.0.1:4180' });
   globalThis.document = dom.window.document; globalThis.window = dom.window; globalThis.confirm = () => true;
-  const calls = [], students = [], groups = [];
+  const calls = [], students = [], groups = [], memberships = [];
   const teacher = { id: 'teacher', name: 'Profesora', role: 'teacher', must_change_password: false };
   let profile = initialProfile || teacher;
   globalThis.fetch = async (url, options = {}) => {
     const data = options.body && JSON.parse(options.body); calls.push({ url, data }); let result;
     if (url === '/api/status') result = { configured: true };
     else if (url === '/api/me') result = { profile };
-    else if (url === '/api/roster') result = { students, groups, memberships: [] };
+    else if (url === '/api/roster') result = { students, groups, memberships };
     else if (url === '/api/my-groups') result = { groups: [{ name: 'Mi grupo' }] };
     else if (url === '/api/password') { profile = { ...profile, must_change_password: false }; result = { ok: true }; }
-    else if (url === '/api/groups') { groups.push({ id: 'grupo', name: data.name }); result = { group: groups[0] }; }
+    else if (url === '/api/groups') { groups.push({ id: 'grupo' + groups.length, name: data.name }); result = { group: groups.at(-1) }; }
+    else if (url === '/api/membership') { if (data.member) memberships.push({ group_id: data.groupId, student_id: data.studentId }); else memberships.splice(memberships.findIndex(m => m.group_id === data.groupId && m.student_id === data.studentId), 1); result = { ok: true }; }
     else if (url === '/api/students') { const created = data.rows.map((row, i) => ({ ...row, id: String(i), password: 'ClaveTemporalSoloTest123' })); students.push(...created.map(({ password, ...student }) => ({ ...student, active: true, must_change_password: true }))); result = { created, rejected: [] }; }
     else result = { ok: true };
     return { ok: true, json: async () => result };
@@ -27,7 +28,7 @@ async function setup(initialProfile) {
   await import(`../accounts-public/app.js?test=${++moduleId}`);
   const $ = selector => document.querySelector(selector);
   const submit = async selector => { $(selector).dispatchEvent(new dom.window.Event('submit', { cancelable: true })); await settle(); };
-  return { dom, calls, $, submit };
+  return { dom, calls, $, submit, memberships };
 }
 test('administración UI crea grupo y alumno; muestra claves una vez sin guardarlas', async () => {
   const ui = await setup();
@@ -54,4 +55,21 @@ test('alumno ve cambio obligatorio antes de sus grupos y no ve administración',
   ui.$('#current-password').value = 'Temporal12345'; ui.$('#new-password').value = 'NuevaClaveAlumno123'; ui.$('#repeat-password').value = 'NuevaClaveAlumno123';
   await ui.submit('#password-form'); assert.equal(ui.$('#password-panel').hidden, true); assert.equal(ui.$('#student-panel').hidden, false); assert.match(ui.$('#my-groups').textContent, /Mi grupo/);
   assert.equal(ui.$('#current-password').value, ''); ui.dom.window.close();
+});
+
+test('registro independiente y vista de grupo: añadir a varios, cancelar baja y confirmar eliminación solo en uno', async () => {
+  const ui=await setup();
+  try {
+    assert.equal(ui.$('#student-group'),null);assert.equal(ui.$('#csv-group'),null);
+    for(const name of ['A','B']){ui.$('#group-name').value=name;await ui.submit('#group-form');}
+    ui.$('#student-control').value='001';ui.$('#student-name').value='Ana';await ui.submit('#student-form');ui.$('#close-credentials').click();
+    assert.equal(ui.calls.find(c=>c.url==='/api/students').data.groupId,undefined);assert.equal(ui.memberships.length,0);
+    for(const id of ['grupo0','grupo1']){ui.$('#roster-group').value=id;ui.$('#roster-group').dispatchEvent(new ui.dom.window.Event('change'));ui.$('#group-available-table button').click();await settle();}
+    assert.equal(ui.memberships.length,2);
+    ui.$('#roster-group').value='grupo0';ui.$('#roster-group').dispatchEvent(new ui.dom.window.Event('change'));
+    globalThis.confirm=()=>false;ui.$('#group-members-table button').click();await settle();assert.equal(ui.memberships.length,2);
+    let warning;globalThis.confirm=text=>{warning=text;return true;};ui.$('#group-members-table button').click();await settle();
+    assert.match(warning,/definitivamente/);assert.match(warning,/otros grupos/);assert.equal(ui.memberships.length,1);assert.equal(ui.memberships[0].group_id,'grupo1');
+    assert.equal(ui.calls.filter(c=>c.url==='/api/membership').at(-1).data.deleteWork,true);
+  }finally{ui.dom.window.close();}
 });

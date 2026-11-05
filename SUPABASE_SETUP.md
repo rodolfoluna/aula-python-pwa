@@ -86,3 +86,11 @@ Documentación oficial:
 
 - https://supabase.com/docs/guides/getting-started/quickstarts/nextjs
 - https://supabase.com/docs/guides/getting-started/api-keys
+
+## Registro independiente e integrantes de grupos
+
+La creación individual y la importación CSV registran cuentas sin grupo. Los grupos existentes y sus integrantes se conservan. Desde **Alumnos y grupos → Integrantes del grupo**, selecciona el grupo y usa **Añadir al grupo** para cada alumno registrado; puede pertenecer a varios grupos del mismo profesor.
+
+Aplica `supabase/migrations/202611040002_group_membership_cleanup.sql` después de las migraciones de actividades y plazos individuales. Esta migración no borra alumnos, pertenencias ni trabajos existentes. Al confirmar **Quitar del grupo**, la aplicación elimina de forma atómica sus avances y entregas de las asignaciones de ese grupo, junto con revisiones y plazos individuales. Conserva su cuenta, sus otros grupos, los trabajos de sus compañeros, las asignaciones y las plantillas del profesor. La acción no se puede deshacer; si lo vuelves a añadir, empieza sin esos trabajos.
+
+Las inscripciones nuevas tienen una versión que vincula sus borradores al grupo. Los guardados del servidor bloquean la pertenencia durante la operación y rechazan versiones anteriores, incluso tras volver a añadir al alumno. Al conectar, se retiran las copias de actividades que ya no están disponibles. Un equipo desconectado puede conservar temporalmente su copia, pero no puede restaurar automáticamente los trabajos eliminados al sincronizar. Las pertenencias anteriores a la migración mantienen válidos sus borradores y guardados pendientes.

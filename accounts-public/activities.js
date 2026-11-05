@@ -111,8 +111,8 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     $('#work-readonly').hidden = data.writable;
     let answer = data.answer;
     if (own) {
-      sync = new DraftSync({ key: `aula-answer:${ownerId}:${assignmentId}`, answer, revision: data.revision, delta: true, lastSaveId: data.submission?.last_save_id, storage: localStorage, validate: value => validateAnswer(template, value),
-        save: async (payload, options) => (await api('answer-save', { assignmentId, actorId: ownerId, ...payload }, options)).submission,
+      sync = new DraftSync({ key: `aula-answer:${ownerId}:${assignmentId}`, answer, revision: data.revision, context: data.assignment.work_version || null, delta: true, lastSaveId: data.submission?.last_save_id, storage: localStorage, validate: value => validateAnswer(template, value),
+        save: async (payload, options) => (await api('answer-save', { assignmentId, actorId: ownerId, workVersion: data.assignment.work_version || null, ...payload }, options)).submission,
         status: (text, kind) => { if (currentEpoch === epoch) { $('#answer-state').textContent = text; $('#answer-state').className = kind; } },
       });
       answer = sync.answer;
