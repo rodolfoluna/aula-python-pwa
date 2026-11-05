@@ -1,5 +1,17 @@
 import { EditorView, EditorState, basicSetup, python, oneDark, keymap, indentWithTab, historyField, indentUnit, Compartment, HighlightStyle, syntaxHighlighting, tags } from './vendor/code-editor.js';
 
+let commentParser;
+// Use Python's syntax tree so hashes in strings, including multiline strings,
+// remain intact. Keep line breaks and indentation while removing comment tokens.
+export function withoutPythonComments(code) {
+  commentParser ||= python().language.parser;
+  let result = '', position = 0;
+  commentParser.parse(code).iterate({ enter(node) {
+    if (node.name === 'Comment') { result += code.slice(position, node.from); position = node.to; }
+  } });
+  return result + code.slice(position);
+}
+
 const lightTheme = [EditorView.theme({
   '&': { backgroundColor: '#ffffff', color: '#203858' },
   '.cm-content': { caretColor: '#2563eb' },

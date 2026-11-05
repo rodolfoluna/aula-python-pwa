@@ -1,7 +1,7 @@
 import { clone, createCell, canMove, newExercise, filenameOK, projectWorkspace } from '../dist/activity-model.js';
 import { parseNotebook, exportNotebook } from '../dist/notebook.js';
 import { renderMarkdown } from '../dist/markdown.js';
-import { mountCodeEditor } from './code-editor.js';
+import { mountCodeEditor, withoutPythonComments } from './code-editor.js';
 
 export function createWorksheet(root, options) {
   const { activity, answer, role, onChange = () => {}, run = () => {}, notice = () => {} } = options;
@@ -150,12 +150,15 @@ export function createWorksheet(root, options) {
       const cursor = editor.getCursor(), form = el('form', 'worksheet-copy-form'), label = el('label', '', 'Archivo del que copiar');
       const source = select(otherFiles.map(name => [name, name]), otherFiles[0], 'Archivo del que copiar', () => {});
       label.append(source);
+      const omitLabel = el('label', 'inline-label'), omit = el('input'); omit.type = 'checkbox'; omit.checked = true; omitLabel.append(omit, el('span', '', 'Omitir comentarios (#)'));
       const insert = el('button', '', 'Insertar código'); insert.type = 'submit';
-      form.append(el('h4', '', 'Insertar código de otro archivo'), label, el('p', 'muted', 'Se insertará todo su código en la posición del cursor del archivo abierto. El archivo de origen se conserva. Puedes deshacer con Ctrl+Z.'), insert, button('Cancelar copia', () => { form.remove(); editor.focus(); }));
+      form.append(el('h4', '', 'Insertar código de otro archivo'), label, omitLabel, el('p', 'muted', 'Se insertará el código en la posición del cursor del archivo abierto. Los # dentro de cadenas de texto se conservan. El archivo de origen no cambia. Puedes deshacer con Ctrl+Z.'), insert, button('Cancelar copia', () => { form.remove(); editor.focus(); }));
       form.onsubmit = event => {
         event.preventDefault();
         if (readonly || locked || source.value === activeFile || !Object.hasOwn(work.files, source.value)) return;
-        const text = work.files[source.value];
+        let text;
+        try { text = omit.checked ? withoutPythonComments(work.files[source.value]) : work.files[source.value]; }
+        catch { notice('No se pudo analizar este archivo. Desmarca «Omitir comentarios (#)» para insertar su contenido completo.', true); return; }
         if (work.files[activeFile].length + text.length > 100000) { notice('La inserción supera el límite de 100 000 caracteres del archivo. Reduce el código antes de copiar.', true); return; }
         if (editor.insertText(text, cursor)) form.remove();
       };
