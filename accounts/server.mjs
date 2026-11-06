@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
 import { randomBytes, createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -7,11 +8,12 @@ import { createSupabaseStore } from './supabase-store.mjs';
 import { AccountError, createAccountsService, studentEmail } from './service.mjs';
 import { createActivitiesService } from './activities.mjs';
 import { hostingConfig } from './hosting.mjs';
+import { windowsRuntime } from '../accounts-public/windows-runtime.js';
 const publicRoot = new URL('../accounts-public/', import.meta.url);
 const hash = value => createHash('sha256').update(value).digest('hex');
 const SESSION_MS = 8 * 60 * 60 * 1000;
 const extraModules = new Map([['/dist/answer-patch.js', ['../dist/answer-patch.js', 'text/javascript']], ['/sync-policy.js', ['sync-policy.js', 'text/javascript']]]);
-for (const name of ['pwa.js', 'offline-store.js', 'sw.js', 'shell-assets.js', 'navigation.js', 'theme.js', 'code-editor.js', 'vendor/code-editor.js']) extraModules.set('/' + name, [name, 'text/javascript']);
+for (const name of ['pwa.js', 'offline-store.js', 'sw.js', 'shell-assets.js', 'navigation.js', 'theme.js', 'code-editor.js', 'project-downloads.js', 'windows-runtime.js', 'vendor/code-editor.js']) extraModules.set('/' + name, [name, 'text/javascript']);
 extraModules.set('/manifest.webmanifest', ['manifest.webmanifest', 'application/manifest+json']);
 extraModules.set('/vendor/code-editor.LICENSE.txt', ['vendor/code-editor.LICENSE.txt', 'text/plain']);
 for (const size of [192, 512]) extraModules.set(`/icons/icon-${size}.png`, [`icons/icon-${size}.png`, 'image/png']);
@@ -45,6 +47,10 @@ export function createAccountsServer({ store, configError, secure = false, origi
       const path = new URL(req.url, 'http://local').pathname;
       if (path === '/healthz' && req.method === 'GET') { json(res, store ? 200 : 503, { ok: !!store }); return; }
       if (!path.startsWith('/api/')) {
+        if (path === windowsRuntime.path && req.method === 'GET') {
+          res.setHeader('Content-Type', 'application/octet-stream'); res.setHeader('Content-Length', windowsRuntime.bytes);
+          const stream = createReadStream(new URL('.' + path, publicRoot)); stream.on('error', () => res.destroy()); stream.pipe(res); return;
+        }
         const file = staticFiles.get(path) || extraModules.get(path);
         if (!file || req.method !== 'GET') { res.writeHead(404).end(); return; }
         res.setHeader('Content-Type', file[1] + '; charset=utf-8');

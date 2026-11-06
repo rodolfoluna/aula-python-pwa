@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build:editor": "node scripts/build-editor.mjs",
+    "build:windows-export": "node scripts/build-windows-export.mjs",
     "dev": "node server.mjs",
     "start": "node server.mjs",
     "start:production": "node scripts/build-pwa.mjs && node accounts/server.mjs",

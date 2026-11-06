@@ -13,6 +13,7 @@ const deadlineFor = (assignment, sub) => assignment.individual_due_at || (sub?.r
 export function setupActivities({ api, perform, getGroups, getProfile, getRunnerOrigin, beforeOpen = async () => {} }) {
   const progressBudget = new PollBudget(), progressTokens = new Map(), progressFlights = new Map();
   let sessionKey, profile, view = 'roster', catalog = { activities: [], assignments: [] }, draft, draftDirty = false, reviewDirty = false, worksheet, sync, opened, progressId, reviewedStudent, ticker, frame, runnerReady, runnerBusy, queued, runnerTimer, cacheKey, epoch = 0;
+  let freeMode = false, freeAnswer, freeCacheFailed = false, freeUnsaved = false;
   const notice = (text, error = false) => { $('#activities-notice').textContent = text; $('#activities-notice').hidden = !text; $('#activities-notice').className = error ? 'error' : ''; };
   const navigation = createNavigation({ window, canLeave: () => !document.querySelector('#logout:disabled') && canLeave(), onError: error => notice(error.message, true) });
   const element = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
@@ -39,9 +40,10 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     if ($('#execution-area').dataset.legacy === 'true') { notice(''); delete $('#execution-area').dataset.legacy; }
     clearInterval(ticker); clearTimeout(runnerTimer); ticker = null; frame?.remove(); frame = null; queued = null; runnerBusy = false; runnerReady = false;
     worksheet?.destroy(); worksheet = null; sync = null; opened = null; draft = null; draftDirty = false; reviewDirty = false; reviewedStudent = null; $('#activity-workspace').hidden = true; screen('catalog');
+    freeMode = false; freeAnswer = null; freeCacheFailed = false; freeUnsaved = false; $('#free-editor-controls').hidden = true;
     for (const id of ['feedback-panel', 'review-form', 'review-history', 'back-current-review']) $('#' + id).hidden = true;
   }
-  function canLeave() { if (navigation.restoring) return true; if (sync?.inFlight) { notice('Espera a que termine el guardado antes de cambiar de actividad.', true); return false; } if (reviewDirty) return confirm('Hay comentarios o una calificación sin guardar. ¿Salir y descartar esos cambios?'); return !(sync?.dirty || draftDirty) || confirm('Hay cambios sin guardar en el servidor. Se conserva la copia local. ¿Quieres salir de esta actividad?'); }
+  function canLeave() { if (freeMode && freeUnsaved) { cacheFreeProject(); if (freeCacheFailed) { notice('No se pudieron guardar los archivos locales. Descárgalos o libera espacio antes de salir.', true); return false; } } if (navigation.restoring) return true; if (sync?.inFlight) { notice('Espera a que termine el guardado antes de cambiar de actividad.', true); return false; } if (reviewDirty) return confirm('Hay comentarios o una calificación sin guardar. ¿Salir y descartar esos cambios?'); return !(sync?.dirty || draftDirty) || confirm('Hay cambios sin guardar en el servidor. Se conserva la copia local. ¿Quieres salir de esta actividad?'); }
   function canReload() {
     if (runnerBusy) { notice('Espera a que termine la ejecución o detén el programa antes de actualizar la app.', true); return false; }
     if (sync?.dirty) {
@@ -67,6 +69,32 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     runnerBusy = true; $('#runner-state').textContent = 'Ejecutando Python…'; syncControls(); frame.contentWindow.postMessage({ type: 'aula-run', items }, getRunnerOrigin());
   }
   function runnerCommand(type, data = {}) { if (frame && runnerReady) frame.contentWindow.postMessage({ type, ...data }, getRunnerOrigin()); }
+  function cacheFreeProject() {
+    if (!freeMode || !freeAnswer || !profile) return;
+    freeUnsaved = true;
+    try {
+      const value = JSON.stringify({ version: 1, project: freeAnswer.project });
+      if (new TextEncoder().encode(value).length > 512000) throw new Error('El proyecto supera 500 KB. Descarga tus archivos y reduce su tamaño.');
+      localStorage.setItem('aula-free-editor:' + profile.id, value); if (freeCacheFailed) notice(''); freeCacheFailed = false; freeUnsaved = false;
+      $('#free-editor-state').textContent = 'Guardado en este equipo · ' + new Date().toLocaleTimeString('es-MX'); $('#free-editor-state').className = '';
+    } catch (error) { freeCacheFailed = true; $('#free-editor-state').textContent = 'No se pudo guardar en este equipo. Descarga tus archivos antes de cerrar. ' + error.message; $('#free-editor-state').className = 'error'; }
+  }
+  function openFreeEditor() {
+    if (!profile || profile.role !== 'student' || profile.must_change_password || !canLeave()) return;
+    const activity = newActivity('files'); activity.title = 'Editor libre';
+    let project = { files: { 'main.py': '# Escribe tu código aquí\n' }, entry: 'main.py', lockedFiles: [] };
+    try {
+      const saved = JSON.parse(localStorage.getItem('aula-free-editor:' + profile.id) || 'null');
+      if (saved) { const normalized = normalizeActivity({ ...activity, content: { ...activity.content, project: { ...saved.project, lockedFiles: [] } } }); project = normalized.content.project; }
+    } catch { notice('No se pudo recuperar el proyecto local. La copia almacenada no se ha eliminado; puedes continuar con un archivo nuevo.', true); }
+    activity.content.project = project;
+    teardown(); freeMode = true; freeAnswer = { project: { files: clone(project.files), entry: project.entry } };
+    $('#activity-workspace').hidden = false; screen('work'); $('#work-title').textContent = 'Editor libre'; $('#free-editor-controls').hidden = false;
+    $('#teacher-draft-fields').hidden = true; $('#answer-controls').hidden = true; $('#work-readonly').hidden = true; $('#work-instructions').replaceChildren();
+    worksheet = createWorksheet($('#worksheet'), { ...executionOptions, activity, answer: freeAnswer, role: 'student', free: true, onChange: cacheFreeProject, onSave: cacheFreeProject, run, notice });
+    startRunner(false, 'files'); syncControls(); $('#free-editor-state').textContent = 'Archivos locales de este equipo. Los cambios se guardan automáticamente.';
+    navigation.record('free-editor', openFreeEditor);
+  }
   window.addEventListener('message', event => {
     if (!frame || event.source !== frame.contentWindow || event.origin !== getRunnerOrigin()) return;
     if (event.data?.type === 'aula-ready') {
@@ -275,6 +303,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   document.querySelector('.brand').onclick = event => { if (profile && !profile.must_change_password) { event.preventDefault(); perform(() => showSection(profile.role === 'teacher' ? 'roster' : 'activities')); } };
   $('#refresh-activities').onclick = () => perform(refresh); $('#refresh-progress').onclick = () => perform(() => showProgress(progressId));
   $('#new-notebook-activity').onclick = () => showDraft(newActivity('notebook')); $('#new-files-activity').onclick = () => showDraft(newActivity('files'));
+  $('#open-free-editor').onclick = () => perform(openFreeEditor); $('#save-free-editor').onclick = cacheFreeProject;
   $('#activity-title').oninput = () => { if (draft) { draft.title = $('#activity-title').value; cacheDraft(); } };
   $('#activity-instructions').oninput = () => { if (draft) { draft.instructions = $('#activity-instructions').value; cacheDraft(); } };
   $('#save-activity').onclick = () => perform(async () => {
@@ -311,13 +340,14 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   });
   $('#close-work').onclick = () => navigation.back();
   $('#close-progress').onclick = () => navigation.back();
-  window.addEventListener('beforeunload', event => { if (sync?.dirty || draftDirty || reviewDirty) { event.preventDefault(); event.returnValue = ''; } });
-  for (const eventName of ['copy', 'cut', 'paste', 'drop']) document.addEventListener(eventName, event => { if (profile?.role === 'student' && !profile.must_change_password) event.preventDefault(); }, true);
-  document.addEventListener('beforeinput', event => { if (profile?.role === 'student' && !profile.must_change_password && ['insertFromPaste', 'insertFromDrop'].includes(event.inputType)) event.preventDefault(); }, true);
+  window.addEventListener('beforeunload', event => { if (sync?.dirty || draftDirty || reviewDirty || freeCacheFailed) { event.preventDefault(); event.returnValue = ''; } });
+  for (const eventName of ['copy', 'cut', 'paste', 'drop']) document.addEventListener(eventName, event => { if (profile?.role === 'student' && !profile.must_change_password && !freeMode) event.preventDefault(); }, true);
+  document.addEventListener('beforeinput', event => { if (profile?.role === 'student' && !profile.must_change_password && !freeMode && ['insertFromPaste', 'insertFromDrop'].includes(event.inputType)) event.preventDefault(); }, true);
   return {
     current: () => opened ? { assignmentId: opened.assignment.id, sync, writable: opened.writable } : null,
     syncControls,
     canReload,
+    canLeave,
     async setSession(value) {
       const nextKey = value ? value.id + ':' + value.must_change_password : '';
       if (nextKey !== sessionKey) {

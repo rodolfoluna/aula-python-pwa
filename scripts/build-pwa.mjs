@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 export const shellAssets = ['/', '/styles.css', '/activities.css', '/app.js', '/activities.js', '/worksheet.js', '/draft-sync.js', '/sync-policy.js', '/csv.js', '/offline-store.js', '/pwa.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/dist/activity-model.js', '/dist/answer-patch.js', '/dist/notebook.js', '/dist/markdown.js', '/dist/vendor/marked.js'];
 shellAssets.push('/navigation.js', '/theme.js', '/code-editor.js', '/vendor/code-editor.js');
+shellAssets.push('/project-downloads.js', '/windows-runtime.js');
 const root = new URL('../accounts-public/', import.meta.url);
 function crc(bytes) { let value = 0xffffffff; for (const byte of bytes) { value ^= byte; for (let i = 0; i < 8; i++) value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0); } return (value ^ 0xffffffff) >>> 0; }
 function chunk(type, data) { const tag = Buffer.from(type), length = Buffer.alloc(4), sum = Buffer.alloc(4); length.writeUInt32BE(data.length); sum.writeUInt32BE(crc(Buffer.concat([tag, data]))); return Buffer.concat([length, tag, data, sum]); }

@@ -2,6 +2,7 @@ import { clone, createCell, canMove, newExercise, filenameOK, projectWorkspace }
 import { parseNotebook, exportNotebook } from '../dist/notebook.js';
 import { renderMarkdown } from '../dist/markdown.js';
 import { mountCodeEditor, withoutPythonComments } from './code-editor.js';
+import { downloadProjectFiles, saveDownload, supportsWindowsExe, windowsExecutable } from './project-downloads.js';
 
 export function createWorksheet(root, options) {
   const { activity, answer, role, onChange = () => {}, run = () => {}, notice = () => {} } = options;
@@ -133,7 +134,7 @@ export function createWorksheet(root, options) {
     const exerciseList = el('div', 'exercise-list'); exerciseList.setAttribute('aria-label', 'Todos los ejercicios');
     originals.forEach((item, index) => { const itemButton = button(item.title, () => { exerciseIndex = index; render(); }, false, false); itemButton.setAttribute('aria-current', String(index === exerciseIndex)); itemButton.classList.toggle('selected', index === exerciseIndex); exerciseList.append(itemButton); });
     const guide = el('details', 'exercise-guide'); guide.open = guideOpen;
-    guide.append(el('summary', '', 'Ejercicios y enunciado'), overview, nav, exerciseList); root.append(guide);
+    guide.append(el('summary', '', 'Ejercicios y enunciado'), overview, nav, exerciseList); if (!options.free) root.append(guide);
     const prompt = el('div', 'activity-markdown'); renderMarkdown(prompt, original.prompt);
     if (teacher) guide.append(input(original.title, 'Título del ejercicio', value => { original.title = value; }), input(original.prompt, 'Enunciado del ejercicio', value => { original.prompt = value; renderMarkdown(prompt, value); }, true));
     guide.append(prompt);
@@ -144,6 +145,22 @@ export function createWorksheet(root, options) {
     explorer.append(tabs, button('Agregar archivo', () => filenameForm('Crear archivo', '', name => { if (!name) return; if (!filenameOK(name) || Object.hasOwn(work.files, name)) { notice('El nombre no es válido o ya existe.', true); return; } work.files[name] = ''; activeFile = name; changed(); }), Object.keys(work.files).length >= 600));
     const controls = el('div', 'worksheet-toolbar'), locked = !teacher && project.lockedFiles.includes(activeFile);
     let editor;
+    controls.append(button('Descargar archivos', () => {
+      if (root.querySelector('.worksheet-download-form')) { root.querySelector('.worksheet-download-form input').focus(); return; }
+      const form = el('form', 'worksheet-download-form'), list = el('div', 'download-file-list'), selected = new Map();
+      for (const name of Object.keys(work.files)) { const label = el('label', 'inline-label'), box = el('input'); box.type = 'checkbox'; box.checked = name === activeFile; box.setAttribute('aria-label', 'Descargar ' + name); label.append(box, el('span', '', name)); list.append(label); selected.set(name, box); }
+      const save = el('button', '', 'Descargar selección'); save.type = 'submit';
+      form.append(el('h4', '', 'Descargar archivos del proyecto'), el('p', 'muted', 'Un archivo se descarga como .py. Varios archivos se descargan juntos en un .zip.'), button('Seleccionar todos', () => selected.forEach(box => { box.checked = true; }), false, false), list, save, button('Cancelar descarga', () => form.remove(), false, false));
+      form.onsubmit = event => { event.preventDefault(); try { (options.downloadFiles || downloadProjectFiles)(work.files, [...selected].filter(([, box]) => box.checked).map(([name]) => name)); form.remove(); } catch (error) { notice(error.message, true); } };
+      controls.after(form); list.querySelector('input').focus();
+    }, false, false));
+    if (supportsWindowsExe()) controls.append(button('Descargar .exe', () => {
+      if (root.querySelector('.worksheet-exe-form')) return;
+      const form = el('form', 'worksheet-exe-form'), status = el('p', 'muted'), generate = el('button', '', 'Generar y descargar .exe'); generate.type = 'submit'; status.setAttribute('role', 'status');
+      form.append(el('h4', '', 'Ejecutable de ' + activeFile), el('p', 'muted', 'Para Windows de 64 bits. Arranca el archivo abierto e incluye los demás archivos del proyecto para sus imports. Incluye Python y su biblioteca estándar; no incluye paquetes externos como Matplotlib. La primera vez descarga un componente de unos 13 MB, que se reutiliza incluso sin conexión. Tu código no se envía al servidor.'), status, generate, button('Cancelar ejecutable', () => form.remove(), false, false));
+      form.onsubmit = async event => { event.preventDefault(); if (generate.disabled) return; const files = clone(work.files), entry = activeFile; generate.disabled = true; try { const blob = await (options.exportExe || windowsExecutable)(files, entry, { progress: text => { status.textContent = text; } }); saveDownload(blob, entry.replace(/\.py$/, '.exe')); form.remove(); } catch (error) { status.textContent = error.message; generate.disabled = false; } };
+      controls.after(form); generate.focus();
+    }, false, false));
     const otherFiles = Object.keys(work.files).filter(name => name !== activeFile);
     controls.append(button('Insertar desde archivo', () => {
       if (root.querySelector('.worksheet-copy-form')) { root.querySelector('.worksheet-copy-form select').focus(); return; }
