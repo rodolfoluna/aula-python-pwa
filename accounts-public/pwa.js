@@ -43,18 +43,18 @@ export async function syncPending({ profile, storage, api, current = () => null 
   return { saved, held };
 }
 
-export function setupPwa({ workspace, api, getProfile, getRunnerOrigin, current, canReload = () => true, perform, reload = () => location.reload() }) {
+export function setupPwa({ workspace, api, getProfile, getRunnerOrigin, current, canReload = () => true, isBusy = () => false, perform, reload = () => location.reload() }) {
   const $ = id => document.getElementById(id);
   if (!$('pwa-status')) return { render() {}, resume() {}, wait: async () => {} };
   let prompt, job, preparing = false, detail = '', worker, nextAttempt = 0, registration, reloadAfterUpdate = false;
   const supported = !!navigator.serviceWorker && !!globalThis.indexedDB;
   function render() {
-    if ($('update-app')) { $('update-app').hidden = !registration?.waiting; $('update-app').disabled = preparing || reloadAfterUpdate; }
+    if ($('update-app')) { $('update-app').hidden = !registration?.waiting; $('update-app').disabled = preparing || reloadAfterUpdate || isBusy(); }
     const profile = getProfile(), offline = navigator.onLine === false || workspace.offline;
     $('prepare-offline').hidden = profile?.role !== 'student' || profile.must_change_password;
-    $('prepare-offline').disabled = preparing || navigator.onLine === false;
+    $('prepare-offline').disabled = preparing || navigator.onLine === false || isBusy();
     $('sync-offline').hidden = profile?.role !== 'student';
-    $('sync-offline').disabled = !!job || preparing || navigator.onLine === false;
+    $('sync-offline').disabled = !!job || preparing || navigator.onLine === false || isBusy();
     let count = 0; try { if (profile) count = pendingKeys(localStorage, profile.id).length; } catch {}
     $('pwa-status').textContent = `${offline ? 'Sin conexión · copia local' : 'Con conexión'}${workspace.enabled(profile) ? ' · Actividades preparadas en este equipo' : ''}${count ? ` · ${count} actividad(es) con avances pendientes` : ''}. ${detail || (profile?.role === 'teacher' ? 'La preparación sin conexión se hace desde la cuenta del alumno.' : '')}`;
   }

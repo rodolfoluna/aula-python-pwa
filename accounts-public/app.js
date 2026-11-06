@@ -166,7 +166,7 @@ $('#student-search').oninput = renderStudents; $('#roster-group').onchange = ren
 $('#refresh-roster').onclick = () => perform(loadRoster);
 window.addEventListener('beforeunload', event => { if (credentials.length) { event.preventDefault(); event.returnValue = ''; } });
 activities = setupActivities({ api, perform, getGroups: () => roster.groups, getProfile: () => profile, getRunnerOrigin: () => runnerOrigin, beforeOpen: () => pwa?.wait() });
-pwa = setupPwa({ workspace: offline, api, getProfile: () => profile, getRunnerOrigin: () => runnerOrigin, current: () => activities.current(), canReload: () => activities.canReload(), perform });
+pwa = setupPwa({ workspace: offline, api, getProfile: () => profile, getRunnerOrigin: () => runnerOrigin, current: () => activities.current(), canReload: () => activities.canReload(), isBusy: () => busy, perform });
 await perform(async () => {
   const status = await api('status'); configured = status.configured; runnerOrigin = status.runnerOrigin || runnerOrigin;
   $('#local-lab-link').hidden = new URL(runnerOrigin).protocol === 'https:';

@@ -10,7 +10,7 @@ for (const succeeds of [false, true]) test(`preparación offline solo se confirm
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,location:dom.window.location,localStorage:dom.window.localStorage,confirm:()=>true});
   Object.defineProperty(dom.window.navigator,'serviceWorker',{value:{register:async()=>({}),ready:Promise.resolve({})},configurable:true});
   Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
-  let committed=0, completed=false, pending, fakeTimer;
+  let committed=0, completed=false, pending, fakeTimer, busy=true;
   const profile={id:'student',role:'student',must_change_password:false};
   const workspace={enabled:()=>false,prepare:async()=>{assert.equal(completed,true);committed++;}};
   const append=document.body.append.bind(document.body);
@@ -23,7 +23,9 @@ for (const succeeds of [false, true]) test(`preparación offline solo se confirm
   const originalInterval=globalThis.setInterval;
   globalThis.setInterval=(...args)=>{fakeTimer=originalInterval(...args);return fakeTimer;};
   try {
-    setupPwa({workspace,getProfile:()=>profile,getRunnerOrigin:()=> 'https://runner.test',perform:action=>{pending=action();},api:async path=>path==='activities'?{assignments:[]}:path==='my-groups'?{groups:[]}:{configured:true}});
+    const pwa=setupPwa({workspace,isBusy:()=>busy,getProfile:()=>profile,getRunnerOrigin:()=> 'https://runner.test',perform:action=>{pending=action();},api:async path=>path==='activities'?{assignments:[]}:path==='my-groups'?{groups:[]}:{configured:true}});
+    assert.equal(document.querySelector('#prepare-offline').disabled,true);assert.equal(document.querySelector('#sync-offline').disabled,true);
+    busy=false;pwa.render();assert.equal(document.querySelector('#prepare-offline').disabled,false);
     document.querySelector('#prepare-offline').click();
     if(succeeds){await pending;assert.equal(committed,1);assert.match(document.querySelector('#pwa-status').textContent,/Listo:/);}
     else{await assert.rejects(pending,/Descarga interrumpida/);assert.equal(committed,0);assert.match(document.querySelector('#pwa-status').textContent,/Preparación incompleta/);}
