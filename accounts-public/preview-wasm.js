@@ -10,9 +10,10 @@ export function createPreviewRuntimeLoader({fetcher=(...args)=>fetch(...args),ca
    const cache=cacheStorage&&await cacheStorage.open('aula-preview-wasm-'+previewRuntime.sha256);
    let response=cache&&await cache.match(previewRuntime.path),fromCache=!!response;
    async function verify(value){if(!value?.ok)throw new Error('No se pudo descargar la vista previa. Prepara la app con conexión.');const bytes=await value.arrayBuffer();const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');if(bytes.byteLength!==previewRuntime.bytes||hash!==previewRuntime.sha256)throw new Error('La vista previa no pasó la comprobación de integridad. Actualiza la app y vuelve a preparar sin conexión.');return bytes;}
+   async function download(){try{return await fetcher(previewRuntime.path,{cache:'no-cache',credentials:'omit'});}catch{throw new Error('La vista previa aún no está preparada en este equipo. Conéctate y pulsa «Preparar sin conexión».');}}
    let bytes;
-   try{bytes=await verify(response||await fetcher(previewRuntime.path,{cache:'no-cache',credentials:'omit'}));}
-   catch(error){if(!fromCache)throw error;await cache.delete(previewRuntime.path);fromCache=false;bytes=await verify(await fetcher(previewRuntime.path,{cache:'no-cache',credentials:'omit'}));}
+   try{bytes=await verify(response||await download());}
+   catch(error){if(!fromCache)throw error;await cache.delete(previewRuntime.path);fromCache=false;bytes=await verify(await download());}
    const module=await WebAssembly.compile(bytes);
    if(cache&&!fromCache)await cache.put(previewRuntime.path,new Response(bytes,{headers:{'Content-Type':'application/wasm'}}));
    return module;
