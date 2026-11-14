@@ -36,6 +36,16 @@ test('consola aislada: protocolo de origen, Python real, input, gráficas y arch
     const previousOutputs = $('#outputs').children.length;
     send({ type: 'aula-run', items: [{ payload: { mode: 'files', entry: 'main.py', files: { 'main.py': 'from funciones import doble\nprint(doble(21))', 'funciones.py': 'def doble(x): return x*2' } } }] });
     await wait(() => $('#outputs').children.length > previousOutputs && $('#state').textContent === 'Ejecución completada'); assert.match($('#outputs').lastElementChild.textContent, /42/);
+    const reportStart = notices.length;
+    const test = { title: 'Entrada', inputs: ['21'], expected: '42', match: 'exact', absent: [] };
+    send({ type: 'aula-run', items: [
+      { evaluation: { exerciseId: 'e1', batch: 'b1', index: 0 }, payload: { mode: 'files', entry: 'main.py', files: { 'main.py': 'print(int(input())*3)' }, test } },
+      { evaluation: { exerciseId: 'e1', batch: 'b1', index: 1 }, payload: { mode: 'files', entry: 'main.py', files: { 'main.py': 'print(int(input())*2)' }, test } },
+    ] });
+    await wait(() => notices.slice(reportStart).filter(n => n.data.type === 'aula-evaluation-result').length === 2 && $('#state').textContent === 'Ejecución completada');
+    const evaluations = notices.slice(reportStart).filter(n => n.data.type === 'aula-evaluation-result').map(n => n.data);
+    assert.deepEqual(evaluations.map(n => n.result.passed), [false, true]);
+    assert.equal(evaluations[1].exerciseId, 'e1'); assert.equal(evaluations[1].index, 1); assert.equal(evaluations[1].batch, 'b1');
     const paste = new dom.window.Event('paste', { cancelable: true, bubbles: true }); $('#input').dispatchEvent(paste); assert.equal(paste.defaultPrevented, true);
     $('#reset').click();
   } finally { window.dispatchEvent(new dom.window.Event('pagehide')); await new Promise(resolve => setImmediate(resolve)); for (const worker of workers) await worker.terminate(); dom.window.close(); }

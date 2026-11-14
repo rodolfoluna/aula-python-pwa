@@ -93,6 +93,8 @@ for (const kind of ['files', 'notebook']) test(`alumno descargado: editor y Pyth
       assert.ok(destination.value.endsWith('print("MAIN ORIGINAL")'));
       assert.equal(activities.current().sync.answer.project.files['main.py'], 'print("MAIN ORIGINAL")');
       button('Siguiente →').click();
+      assert.ok(document.querySelector('[aria-label="Código de ejercicio_2_1_main.py"]'));
+      button('abierto.py').click();
       assert.match(document.querySelector('[aria-label="Código de abierto.py"]').value, /José 🐍/);
       button('main.py').click(); await run(button('Ejecutar'), runner.querySelector('#outputs'), /MAIN ORIGINAL/);
     } else {

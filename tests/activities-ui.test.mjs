@@ -23,7 +23,8 @@ test('editor de ejercicios conserva archivos y respuestas al navegar; bloquea ej
   assert.equal(root.querySelector('[aria-label="Código de ejemplo.py"]').readOnly, true); assert.equal(find('Eliminar archivo').disabled, true);
   [...root.querySelectorAll('button')].find(button => button.textContent === 'main.py').click(); const code = root.querySelector('[aria-label="Código de main.py"]'); code.value = 'print(99)'; code.dispatchEvent(new dom.window.Event('input'));
   find('Siguiente →').click();
-  assert.equal(root.querySelector('[aria-label="Código de main.py"]').value, 'print(99)');
+  assert.equal(root.querySelector('[aria-label="Código de ejercicio_2.py"]').value, '# Escribe tu solución\n');
+  assert.equal(answer.project.files['main.py'], 'print(99)');
   find('funciones.py').click(); find('Renombrar archivo').click();
   root.querySelector('[aria-label="Nombre del archivo Python"]').value = 'modulo.py'; find('Aceptar nombre').click();
   assert.equal(Object.hasOwn(answer.project.files, 'funciones.py'), false);

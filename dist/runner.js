@@ -23,7 +23,7 @@ function append(channel, text) {
   else { const pre = document.createElement('pre'); pre.className = channel; pre.textContent = text; output.append(pre); }
 }
 function destroy() { worker?.terminate(); worker = null; loaded?.reject(new Error('Memoria reiniciada.')); loaded = null; pending?.resolve(false); pending = null; clearTimeout(timeout); clearTimeout(killTimer); $('#input-form').hidden = true; }
-function timer() { clearTimeout(timeout); timeout = setTimeout(() => stop('Se superaron 30 segundos de ejecución.'), 30000); }
+function timer() { clearTimeout(timeout); const seconds = currentItem?.evaluation ? 3 : 30; timeout = setTimeout(() => stop(`Se superaron ${seconds} segundos de ejecución.`), seconds * 1000); }
 async function initialize() {
   if (worker) return loaded.promise;
   if (!crossOriginIsolated || typeof SharedArrayBuffer === 'undefined') throw new Error('El navegador no habilitó el aislamiento de Python. En la versión publicada, usa HTTPS y comprueba las cabeceras de aislamiento de ambos servicios. En local, usa 127.0.0.1 e inicia npm run dev.');
@@ -35,6 +35,7 @@ async function initialize() {
     if (data.type === 'diagnostic') $('#diagnostics').textContent += data.text + '\n';
     if (data.type === 'ready') loaded.resolve();
     if (data.type === 'text') append(data.channel, data.text);
+    if (data.type === 'evaluation' && currentItem?.evaluation) { tell('aula-evaluation-result', { ...currentItem.evaluation, result: data.result }); append(data.result.passed ? 'stdout' : 'stderr', data.result.message + '\n'); }
     if (data.type === 'figure') { const img = document.createElement('img'); img.src = 'data:image/png;base64,' + data.data; img.alt = 'Gráfica de Python'; output?.append(img); emit('figure', { data: data.data }); }
     if (data.type === 'input') { clearTimeout(timeout); $('#input-form').hidden = false; $('#input').value = ''; $('#input').focus(); status('Esperando tu respuesta…'); emit('input'); }
     if (data.type === 'done') { clearTimeout(timeout); clearTimeout(killTimer); $('#input-form').hidden = true; emit('done', { ok: data.ok }); pending?.resolve(data.ok); pending = null; }
@@ -91,4 +92,4 @@ function submitInput(value) { const bytes = new TextEncoder().encode(value); if 
 $('#input-form').onsubmit = event => { event.preventDefault(); submitInput($('#input').value); };
 for (const type of ['copy', 'cut', 'paste', 'drop']) document.addEventListener(type, event => { if (student) event.preventDefault(); }, true);
 window.addEventListener('pagehide', destroy);
-tell('aula-ready', { protocol: 2 });
+tell('aula-ready', { protocol: 2, evaluation: 1 });

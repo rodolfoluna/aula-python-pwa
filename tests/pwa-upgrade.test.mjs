@@ -74,6 +74,8 @@ for (const kind of ['notebook', 'files']) test(`actualización y reinicio offlin
     if (kind === 'files') {
       assert.match(document.querySelector('.exercise-counter').textContent, /1 de 7/);
       [...document.querySelectorAll('button')].find(button => button.textContent === 'Siguiente →').click();
+      assert.ok(document.querySelector('[aria-label="Código de ejercicio_2_1_main.py"]'));
+      [...document.querySelectorAll('.project-files button')].find(button => button.textContent === 'main.py').click();
       reopened = document.querySelector('[aria-label="Código de main.py"]');
       assert.equal(reopened.value, 'print("antes_de_actualizar")');
       const recovered = JSON.parse(localStorage.getItem(key));

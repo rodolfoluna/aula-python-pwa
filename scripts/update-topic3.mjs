@@ -1,0 +1,15 @@
+import {mkdir,writeFile} from 'node:fs/promises';
+import {createSupabaseStore} from '../accounts/supabase-store.mjs';
+import {normalizeActivity} from '../dist/activity-model.js';
+import {redesignTopic3} from './topic3-activity.mjs';
+const id='77f893d7-7520-4663-8762-be17c0a770b1', store=createSupabaseStore();
+const original=await store.activity(id);
+if(!original)throw new Error('No se encontró la actividad.');
+if(original.content.exercises.every(e=>e.file&&e.evaluation?.cases?.length))throw new Error('La actividad ya tiene asociaciones y pruebas; se requiere revisar los cambios antes de volver a aplicarlos.');
+const updated=normalizeActivity(redesignTopic3(original));
+if(JSON.stringify(updated.content.project)!==JSON.stringify(original.content.project))throw new Error('La actualización no debe cambiar ningún archivo inicial.');
+await mkdir('.deployment',{recursive:true});
+await writeFile(`.deployment/topic3-backup-v${original.version}-${Date.now()}.json`,JSON.stringify(original,null,2),{flag:'wx'});
+const saved=await store.updateActivity(id,original.version,updated);
+if(!saved)throw new Error('La actividad cambió durante la actualización. No se sobrescribió.');
+console.log(JSON.stringify({id:saved.id,title:saved.title,version:saved.version,exercises:saved.content.exercises.length,cases:saved.content.exercises.reduce((n,e)=>n+e.evaluation.cases.length,0),scope:'Solo se actualizó la plantilla; archivos y asignaciones intactos.'},null,2));

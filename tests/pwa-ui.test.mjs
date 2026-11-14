@@ -31,6 +31,8 @@ for (const kind of ['notebook', 'files']) test('app arranca sin red, permite edi
     assert.match(localStorage.getItem('aula-answer:offline-student:one'), /valor=42/);
     if (kind === 'files') {
       const next = [...document.querySelectorAll('button')].find(button => button.textContent === 'Siguiente →'); next.click();
+      assert.ok(document.querySelector('[aria-label="Código de ejercicio_2_1_main.py"]'));
+      [...document.querySelectorAll('.project-files button')].find(button => button.textContent === 'main.py').click();
       assert.equal(document.querySelector('[aria-label="Código de main.py"]').value, 'valor=42');
       const cached = JSON.parse(localStorage.getItem('aula-answer:offline-student:one'));
       assert.equal(cached.answer.project.files['main.py'], 'valor=42');

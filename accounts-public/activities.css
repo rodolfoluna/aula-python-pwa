@@ -30,3 +30,14 @@ html[data-theme=dark] .exercise-guide>summary{color:#c8dcfa}
 .progress-row .assignment-deadline-form{flex-basis:100%;max-width:640px}.progress-row .assignment-deadline-form button{margin:8px 8px 0 0}
 .worksheet-copy-form{margin:12px 0;padding:16px;border:1px solid var(--line);border-radius:8px;background:var(--surface-soft)}.worksheet-copy-form h4{margin:0 0 12px}.worksheet-copy-form select{margin-top:6px}.worksheet-copy-form button{margin:8px 8px 0 0}
 .worksheet-download-form,.worksheet-exe-form{margin:12px 0;padding:16px;border:1px solid var(--line);border-radius:8px;background:var(--surface-soft)}.worksheet-download-form h4,.worksheet-exe-form h4{margin:0 0 12px}.worksheet-download-form button,.worksheet-exe-form button{margin:8px 8px 0 0}.download-file-list{display:flex;flex-direction:column;max-height:260px;overflow:auto;margin:12px 0}.download-file-list .inline-label{justify-content:flex-start}#free-editor-controls{padding:12px;margin:12px 0;border:1px solid var(--line);border-radius:8px;background:var(--surface-soft)}#free-editor-state{margin:6px 0}#free-editor-state.error{color:#b23a4c}html[data-theme=dark] #free-editor-state.error{color:#ffabb3}
+.exercise-evaluation { margin-top: 1rem; padding: 1rem; border: 1px solid var(--border, #8d9991); border-radius: .7rem; }
+.exercise-evaluation h3 { margin-top: 0; }
+.exercise-file-association { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: 1rem 0; }
+.evaluation-settings fieldset { margin: 1rem 0; min-width: 0; }
+.evaluation-settings label { display: block; margin: .7rem 0; }
+.evaluation-settings textarea { min-height: 5rem; font-family: var(--code-font, monospace); }
+.evaluation-settings select { max-width: 100%; }
+.evaluation-result, .solution-preview { margin-top: .8rem; padding: .8rem; border: 1px solid var(--border, #8d9991); border-radius: .5rem; }
+.exercise-evaluation pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; padding: .8rem; background: var(--surface, #f2f5f3); color: var(--text, #182b22); }
+.exercise-evaluation summary { cursor: pointer; font-weight: 600; }
+.evaluation-status { font-weight: 600; }

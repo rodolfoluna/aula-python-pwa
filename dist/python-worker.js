@@ -66,6 +66,51 @@ _aula_plt.show = _aula_show
   send('status', { text: 'Ejecutando Python…', loading: false });
 }
 
+// Test harness only: inputs and expected output, never a reference implementation.
+const evaluationHarness = `
+def _aula_evaluate(source, filename, inputs):
+    import builtins, contextlib, io, json
+    class LimitedOutput(io.StringIO):
+        def write(self, value):
+            if self.tell() + len(value) > 100000:
+                raise RuntimeError('Se alcanzó el límite de salida')
+            return super().write(value)
+    output, errors = LimitedOutput(), LimitedOutput()
+    position = 0
+    def read_input(prompt=''):
+        nonlocal position
+        if position >= len(inputs):
+            raise EOFError('El programa solicita más entradas de las previstas')
+        value = inputs[position]
+        position += 1
+        return value
+    original_input = builtins.input
+    error = ''
+    try:
+        builtins.input = read_input
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            try:
+                exec(compile(source, filename, 'exec'), {'__name__': '__main__', '__file__': filename})
+            except SystemExit as stop:
+                if stop.code not in (None, 0):
+                    error = 'SystemExit: ' + str(stop.code)
+            except BaseException as failure:
+                error = type(failure).__name__ + ': ' + str(failure)
+    finally:
+        builtins.input = original_input
+    return json.dumps({'output': output.getvalue(), 'error': error or errors.getvalue(), 'consumed': position})
+`;
+function checkEvaluation(test, result) {
+  const lines = value => value.replaceAll('\r', '').split('\n').map(line => line.trim().replace(/[ \t]+/g, ' ')).filter(Boolean);
+  const expected = lines(test.expected), actual = lines(result.output);
+  let matches;
+  if (test.match === 'exact') matches = JSON.stringify(expected) === JSON.stringify(actual);
+  else { let cursor = 0; for (const line of actual) if (line === expected[cursor]) cursor++; matches = cursor === expected.length; }
+  const forbidden = (test.absent || []).find(value => result.output.toLocaleLowerCase().includes(value.toLocaleLowerCase()));
+  const passed = !result.error && result.consumed === test.inputs.length && matches && !forbidden;
+  return { ...result, output: result.output.slice(0, 20000), passed, message: result.error ? 'El programa terminó con un error.' : result.consumed !== test.inputs.length ? `Se usaron ${result.consumed} de ${test.inputs.length} entradas previstas.` : forbidden ? `No debe aparecer: ${forbidden}` : !matches ? 'La salida no coincide con las líneas esperadas. Compara con la vista previa.' : 'Entradas y salida correctas.' };
+}
+
 async function execute(data) {
   outputBytes = 0;
   let temporary;
@@ -73,7 +118,7 @@ async function execute(data) {
     // Inspect every project file, including helper modules imported by the entry point.
     // Basic exercises do not need to download or import the plotting stack.
     const sources = data.mode === 'files' ? Object.values(data.files) : [data.code];
-    if (!plotsReady && sources.some(code => /\b(?:matplotlib|pylab)\b/.test(code))) await initializePlots();
+    if (!data.test && !plotsReady && sources.some(code => /\b(?:matplotlib|pylab)\b/.test(code))) await initializePlots();
     activeId = data.id;
     if (data.mode === 'files') {
       const path = '/aula_project';
@@ -98,7 +143,13 @@ _importlib.invalidate_caches()
       if (!Object.hasOwn(data.files, data.entry)) throw new Error('No existe el archivo principal.');
       temporary = py.runPython("{'__name__': '__main__'}");
       temporary.set('__file__', `${path}/${data.entry}`);
-      py.runPython(data.files[data.entry], { globals: temporary, filename: data.entry });
+      if (data.test) {
+        if (!Array.isArray(data.test.inputs) || data.test.inputs.length > 300 || typeof data.test.expected !== 'string') throw new Error('Caso de prueba inválido.');
+        py.runPython(evaluationHarness, { globals: temporary });
+        const evaluate = temporary.get('_aula_evaluate'), inputs = py.toPy(data.test.inputs);
+        try { send('evaluation', { result: checkEvaluation(data.test, JSON.parse(evaluate(data.files[data.entry], `${path}/${data.entry}`, inputs))) }); }
+        finally { evaluate.destroy(); inputs.destroy(); }
+      } else py.runPython(data.files[data.entry], { globals: temporary, filename: data.entry });
     } else {
       py.runPython(data.code, { globals: notebook, filename: data.filename || '<exec>' });
     }
@@ -107,6 +158,7 @@ _importlib.invalidate_caches()
     send('done', { ok: true });
   } catch (error) {
     activeId = data.id;
+    if (data.test) send('evaluation', { result: { passed: false, output: '', error: String(error.message || error).slice(0, 20000), message: 'No se pudo completar la prueba.' } });
     send('text', { channel: 'stderr', text: String(error.message || error) + '\n' });
     send('done', { ok: false });
   } finally {

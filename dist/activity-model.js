@@ -19,6 +19,14 @@ function cell(value) {
   return { id: value.id, type: value.type, title: text(value.title, 160, 'El título de celda'), code: text(value.code, 100000, 'El contenido de celda'), locked: value.locked, metadata: { ...(value.metadata?.deletable === false ? { deletable: false } : {}) } };
 }
 function sizeCheck(value) { if (new TextEncoder().encode(JSON.stringify(value)).length > 512000) throw new Error('El contenido supera 500 KB. Reduce el código o las instrucciones.'); return value; }
+export function normalizeEvaluation(value) {
+  if (!record(value) || !Array.isArray(value.cases) || !value.cases.length || value.cases.length > 20) throw new Error('La autoevaluación necesita entre 1 y 20 casos.');
+  return { cases: value.cases.map(item => {
+    if (!record(item) || !Array.isArray(item.inputs) || item.inputs.length > 300 || !['exact', 'lines'].includes(item.match)) throw new Error('Caso de prueba inválido.');
+    return { title: text(item.title, 160, 'El nombre del caso', false), inputs: item.inputs.map(value => text(value, 1000, 'La entrada')), expected: text(item.expected, 20000, 'La salida esperada', false), match: item.match,
+      absent: (Array.isArray(item.absent) ? item.absent : []).slice(0, 30).map(value => text(value, 160, 'La salida que debe omitirse', false)) };
+  }), preview: value.preview === true };
+}
 export function normalizeActivity(input) {
   if (!record(input) || !['notebook', 'files'].includes(input.kind) || !record(input.content)) throw new Error('Tipo de actividad inválido.');
   const result = { title: text(input.title, 160, 'El título', false).trim(), instructions: text(input.instructions || '', 20000, 'Las instrucciones'), kind: input.kind };
@@ -32,7 +40,8 @@ export function normalizeActivity(input) {
       if (!idOK(item.id)) throw new Error('Identificador de ejercicio inválido.');
       const fileMap = input.content.project ? null : files(item.files, item.entry);
       if (!input.content.project && (!Array.isArray(item.lockedFiles) || item.lockedFiles.some(name => !Object.hasOwn(fileMap, name)))) throw new Error('Archivos bloqueados inválidos.');
-      return { id: item.id, title: text(item.title, 160, 'El título de ejercicio', false), prompt: text(item.prompt, 20000, 'El enunciado'), ...(input.content.project ? {} : { files: fileMap, entry: item.entry, lockedFiles: [...new Set(item.lockedFiles)] }) };
+      if (item.file !== undefined && (!filenameOK(item.file) || !Object.hasOwn(input.content.project?.files || fileMap, item.file))) throw new Error('El archivo asociado al ejercicio no existe.');
+      return { id: item.id, title: text(item.title, 160, 'El título de ejercicio', false), prompt: text(item.prompt, 20000, 'El enunciado'), ...(item.file ? { file: item.file } : {}), ...(item.evaluation ? { evaluation: normalizeEvaluation(item.evaluation) } : {}), ...(input.content.project ? {} : { files: fileMap, entry: item.entry, lockedFiles: [...new Set(item.lockedFiles)] }) };
     }); uniqueIds(exercises); result.content = { exercises, ...(input.content.project ? { project: normalizeProject(input.content.project) } : {}) };
   }
   return sizeCheck(result);
@@ -66,6 +75,10 @@ export function validateAnswer(activity, input) {
   }
   if (input.project) {
     const base = projectWorkspace(activity), project = { files: files(input.project.files, input.project.entry, 600), entry: input.project.entry };
+    if (input.project.exerciseFiles !== undefined) {
+      if (!record(input.project.exerciseFiles) || Object.entries(input.project.exerciseFiles).some(([id, name]) => !activity.content.exercises.some(item => item.id === id) || !Object.hasOwn(project.files, name))) throw new Error('Asociación de archivos inválida.');
+      project.exerciseFiles = { ...input.project.exerciseFiles };
+    }
     for (const name of base.lockedFiles) if (project.files[name] !== base.files[name]) throw new Error('No se puede modificar ni eliminar un archivo bloqueado.');
     return sizeCheck({ project });
   }
@@ -116,4 +129,10 @@ export function projectWorkspace(activity, answer) {
   });
   if (!Object.hasOwn(project.files, project.entry)) project.entry = Object.keys(project.files)[0];
   return project;
+}
+
+// Legacy projects keep their names and contents; explicit associations take precedence.
+export function exerciseFile(activity, exercise, index, project) {
+  const candidates = [project.exerciseFiles?.[exercise.id], exercise.file, `ejercicio_${index + 1}.py`, `problema${index + 1}.py`, index ? `ejercicio_${index + 1}_1_${exercise.entry || 'main.py'}` : exercise.entry, project.entry];
+  return candidates.find(name => name && Object.hasOwn(project.files, name)) || Object.keys(project.files)[0];
 }

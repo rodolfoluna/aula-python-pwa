@@ -171,3 +171,13 @@ Aplica `supabase/migrations/202611040001_student_deadlines.sql` después de las 
 En **Ver avances**, usa **Cambiar fecha individual** junto al alumno. Está disponible sin iniciar, en progreso y en corrección, incluso cuando venció el plazo del grupo. La nueva fecha debe ser futura; permite quitar la excepción para recuperar el plazo general o de corrección. No crea una respuesta ni altera su revisión, código o estado de entrega. La actividad debe estar abierta y el alumno activo y en el grupo. Una entrega ya realizada se habilita con **Devolver para correcciones**; esa devolución sustituye cualquier excepción previa por el nuevo plazo de corrección.
 
 El alumno ve el plazo individual en su catálogo y al abrir la actividad. Debe actualizar con conexión; si necesita usar el nuevo plazo offline, debe volver a preparar las actividades. Una copia descargada anteriormente conserva el plazo que conocía hasta actualizarse.
+
+### Archivos asociados, autoevaluación y ejemplos
+
+En plantillas de archivos, cada ejercicio permite seleccionar **Archivo asociado al ejercicio**. Al navegar entre ejercicios se abre ese archivo; explorar otros archivos no cambia el ejercicio. Agregar un ejercicio crea un archivo nuevo. Los renombrados realizados por alumnos se conservan en su respuesta, incluidos el trabajo offline y el guardado diferencial.
+
+El profesor puede habilitar **Autoevaluación**, configurar hasta 20 casos por ejercicio (entradas en orden y salida esperada), elegir comparación de salida completa o líneas en orden y añadir textos que no deben aparecer. La vista previa opcional presenta ejemplos de consola, sin incluir una implementación de referencia. `input()` recibe las entradas del caso sin comparar sus preguntas; se comparan las salidas de `print()`. Se ignoran líneas vacías y espacios exteriores. Cada prueba tiene un límite de tres segundos una vez listo Python.
+
+**Ejecutar** usa el archivo abierto. **Autoevaluar ejercicio** usa el archivo asociado. Las pruebas se ejecutan localmente con Python y funcionan offline con la actividad y el motor descargados. Los resultados son orientativos: no cambian notas, entregas ni archivos, y el profesor debe revisar las estructuras utilizadas. Los casos no son secretos ni constituyen una evaluación resistente a manipulación del cliente.
+
+El rediseño de «Ejercicios del tema 3» se define en `scripts/topic3-activity.mjs`: ocho ejercicios, los mismos archivos iniciales, 30 casos. `node --env-file=.env scripts/update-topic3.mjs` actualiza únicamente la plantilla identificada, con copia local y control de versión; se niega a reaplicar el rediseño sin revisión. No modifica asignaciones existentes.
