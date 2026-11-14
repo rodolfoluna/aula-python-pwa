@@ -1,4 +1,5 @@
 import {mkdir,writeFile} from 'node:fs/promises';
+import {isDeepStrictEqual} from 'node:util';
 import {createSupabaseStore} from '../accounts/supabase-store.mjs';
 import {normalizeActivity} from '../dist/activity-model.js';
 import {redesignTopic3} from './topic3-activity.mjs';
@@ -7,7 +8,7 @@ const original=await store.activity(id);
 if(!original)throw new Error('No se encontró la actividad.');
 if(original.content.exercises.every(e=>e.file&&e.evaluation?.cases?.length))throw new Error('La actividad ya tiene asociaciones y pruebas; se requiere revisar los cambios antes de volver a aplicarlos.');
 const updated=normalizeActivity(redesignTopic3(original));
-if(JSON.stringify(updated.content.project)!==JSON.stringify(original.content.project))throw new Error('La actualización no debe cambiar ningún archivo inicial.');
+if(!isDeepStrictEqual(updated.content.project,original.content.project))throw new Error('La actualización no debe cambiar ningún archivo inicial.');
 await mkdir('.deployment',{recursive:true});
 await writeFile(`.deployment/topic3-backup-v${original.version}-${Date.now()}.json`,JSON.stringify(original,null,2),{flag:'wx'});
 const saved=await store.updateActivity(id,original.version,updated);
