@@ -21,11 +21,12 @@ function cell(value) {
 function sizeCheck(value) { if (new TextEncoder().encode(JSON.stringify(value)).length > 512000) throw new Error('El contenido supera 500 KB. Reduce el código o las instrucciones.'); return value; }
 export function normalizeEvaluation(value) {
   if (!record(value) || !Array.isArray(value.cases) || !value.cases.length || value.cases.length > 20) throw new Error('La autoevaluación necesita entre 1 y 20 casos.');
+  if (value.previewProgram !== undefined && !/^family-budget-[1-8]$/.test(value.previewProgram)) throw new Error('Simulación interactiva inválida.');
   return { cases: value.cases.map(item => {
     if (!record(item) || !Array.isArray(item.inputs) || item.inputs.length > 300 || !['exact', 'lines'].includes(item.match)) throw new Error('Caso de prueba inválido.');
     return { title: text(item.title, 160, 'El nombre del caso', false), inputs: item.inputs.map(value => text(value, 1000, 'La entrada')), expected: text(item.expected, 20000, 'La salida esperada', false), match: item.match,
       absent: (Array.isArray(item.absent) ? item.absent : []).slice(0, 30).map(value => text(value, 160, 'La salida que debe omitirse', false)) };
-  }), preview: value.preview === true };
+  }), preview: value.preview === true, ...(value.previewProgram ? { previewProgram: value.previewProgram } : {}) };
 }
 export function normalizeActivity(input) {
   if (!record(input) || !['notebook', 'files'].includes(input.kind) || !record(input.content)) throw new Error('Tipo de actividad inválido.');

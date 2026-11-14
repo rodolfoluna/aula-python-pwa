@@ -2,6 +2,7 @@ import { clone, createCell, canMove, newExercise, filenameOK, projectWorkspace, 
 import { parseNotebook, exportNotebook } from '../dist/notebook.js';
 import { renderMarkdown } from '../dist/markdown.js';
 import { mountCodeEditor, withoutPythonComments } from './code-editor.js';
+import { mountInteractivePreview, previewChoices } from './interactive-preview.js';
 import { downloadProjectFiles, saveDownload, supportsWindowsExe, windowsExecutable } from './project-downloads.js';
 
 export function createWorksheet(root, options) {
@@ -10,7 +11,7 @@ export function createWorksheet(root, options) {
   let editors = [];
   const editorCache = new Map();
   const outputs = new Map(), outputViews = new Map();
-  const evaluations = new Map();
+  const evaluations = new Map(), previews = new Map();
   let kernelBusy = false;
   let guideOpen = true;
   const el = (tag, className, text) => { const element = document.createElement(tag); if (className) element.className = className; if (text !== undefined) element.textContent = text; return element; };
@@ -122,7 +123,8 @@ export function createWorksheet(root, options) {
     panel.append(el('h3', '', 'Comprobar mi solución'), el('p', 'muted', 'Pruebas orientativas de entradas y salidas. No sustituyen la calificación del profesor ni la revisión de las estructuras utilizadas. Se ejecuta el archivo asociado al ejercicio; tus archivos no se modifican.'));
     if (teacher) {
       const settings = el('details', 'evaluation-settings'); settings.append(el('summary', '', 'Configurar pruebas y vista previa'));
-      const label = el('label', 'inline-label'), preview = el('input'); preview.type = 'checkbox'; preview.checked = config.preview; preview.disabled = readonly; preview.onchange = () => { config.preview = preview.checked; changed(); }; label.append(preview, el('span', '', 'Mostrar ejemplos del funcionamiento esperado')); settings.append(label);
+      const label = el('label', 'inline-label'), preview = el('input'); preview.type = 'checkbox'; preview.checked = config.preview; preview.disabled = readonly; preview.onchange = () => { config.preview = preview.checked; changed(); }; label.append(preview, el('span', '', 'Mostrar vista previa del funcionamiento esperado')); settings.append(label);
+      settings.append(select(previewChoices, config.previewProgram || '', 'Simulación interactiva', value => { if (value) config.previewProgram = value; else delete config.previewProgram; changed(); }, readonly), el('p', 'muted', 'Las simulaciones se ejecutan en el servidor y requieren conexión. Guarda la plantilla antes de probarlas. Los programas de referencia no se descargan ni se incluyen en los archivos del alumno.'));
       settings.append(el('p', 'muted', 'Una entrada por línea, en el orden de input(). Las líneas vacías también cuentan. No se comparan los textos de las preguntas de input(). La salida esperada contiene solo lo que imprime el programa. No introduzcas código de solución.'));
       config.cases.forEach((test, index) => {
         const box = el('fieldset'), legend = el('legend', '', `Caso ${index + 1}`); box.append(legend);
@@ -153,10 +155,15 @@ export function createWorksheet(root, options) {
       }); panel.append(el('p', 'muted', 'Resultados de la última prueba. Vuelve a evaluar después de cambiar el código.'));
     }
     if (config.preview) {
-      const demo = el('details', 'solution-preview'); demo.append(el('summary', '', 'Vista previa: funcionamiento esperado'), el('p', 'muted', 'Ejemplos de consola preparados por el profesor. No ejecutan ni muestran código de solución. Los textos de las preguntas pueden variar; las entradas se proporcionan en este orden.'));
+      const demo = el('details', 'solution-preview');
+      const key = exercise.id + ':' + (config.previewProgram || ''), state = previews.get(key) || {};
+      previews.set(key, state); demo.open = state.open === true; demo.ontoggle = () => { state.open = demo.open; };
+      demo.append(el('summary', '', config.previewProgram ? 'Vista previa interactiva: prueba con tus datos' : 'Vista previa: funcionamiento esperado'));
+      if (config.previewProgram) { const consoleRoot = el('div', 'interactive-preview'); demo.append(consoleRoot); mountInteractivePreview(consoleRoot, { state, request: options.preview, exerciseId: exercise.id }); }
+      const examples = el('details', 'preview-examples'); examples.append(el('summary', '', 'Ejemplos de prueba'), el('p', 'muted', 'Entradas y salidas de los casos preparados por el profesor, sin código de solución.'));
       const view = el('div');
       const show = index => { const test = config.cases[index]; view.replaceChildren(el('h4', '', 'Entradas del usuario'), el('pre', '', test.inputs.map((value, index) => `${index + 1}. > ${value}`).join('\n') || '(no se solicitan datos)'), el('h4', '', 'Salida esperada'), el('pre', '', test.expected)); };
-      demo.append(select(config.cases.map((test, index) => [String(index), test.title]), '0', 'Ejemplo de funcionamiento', value => show(Number(value))), view); show(0); panel.append(demo);
+      examples.append(select(config.cases.map((test, index) => [String(index), test.title]), '0', 'Ejemplo de funcionamiento', value => show(Number(value))), view); show(0); demo.append(examples); panel.append(demo);
     }
     guide.append(panel);
   }
@@ -273,5 +280,5 @@ export function createWorksheet(root, options) {
   }
   function render() { guideOpen = root.querySelector('.exercise-guide')?.open ?? guideOpen; editors.forEach(editor => editor.destroy()); editors = []; outputViews.clear(); root.replaceChildren(); if (activity.kind === 'notebook') notebook(); else exercises(); syncKernelControls(); }
   render();
-  return { render, receiveOutput, receiveEvaluation, setExecutionState(text, busy) { const finished = kernelBusy && !busy; kernelBusy = busy; if (finished) { evaluations.forEach(state => { state.running = false; }); if (evaluations.size) paintEvaluation(); } root.querySelectorAll('[data-evaluation-run]').forEach(control => { control.disabled = busy; }); const label = root.querySelector('.notebook-kernel-state'); if (label) label.textContent = text; syncKernelControls(); }, syncControls() { root.querySelectorAll('[data-protected-disabled="true"]').forEach(el => { el.disabled = true; }); syncKernelControls(); }, setReadonly(value) { readonly = value; render(); }, destroy() { editors.forEach(editor => editor.destroy()); editors = []; outputs.clear(); outputViews.clear(); root.replaceChildren(); } };
+  return { render, receiveOutput, receiveEvaluation, setExecutionState(text, busy) { const finished = kernelBusy && !busy; kernelBusy = busy; if (finished) { evaluations.forEach(state => { state.running = false; }); if (evaluations.size) paintEvaluation(); } root.querySelectorAll('[data-evaluation-run]').forEach(control => { control.disabled = busy; }); const label = root.querySelector('.notebook-kernel-state'); if (label) label.textContent = text; syncKernelControls(); }, syncControls() { previews.forEach(state => state.paint?.()); root.querySelectorAll('[data-protected-disabled="true"]').forEach(el => { el.disabled = true; }); syncKernelControls(); }, setReadonly(value) { readonly = value; render(); }, destroy() { previews.forEach(state => { state.generation = (state.generation || 0) + 1; state.paint = null; }); editors.forEach(editor => editor.destroy()); editors = []; outputs.clear(); outputViews.clear(); root.replaceChildren(); } };
 }

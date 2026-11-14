@@ -40,7 +40,15 @@ export function redesignTopic3(original) {
   activity.content.exercises.forEach((exercise,index)=>{
     exercise.file=index===7?'main.py':`ejercicio_${index+1}.py`;
     exercise.prompt+='\n\n## Contrato de salida para la autoevaluación\n\n'+contracts[index]+'\n\nEl panel de vista previa muestra los casos de prueba y el formato exacto de los resultados. Las preguntas de input() no forman parte de la salida comparada. Usa dos decimales para todos los importes y conserva las etiquetas y acentos.';
-    exercise.evaluation={preview:true,cases:cases[index]};
+    exercise.evaluation={preview:true,previewProgram:`family-budget-${index+1}`,cases:cases[index]};
   });
+  return activity;
+}
+
+export function enableInteractiveTopic3(original) {
+  if(original.title!=='Ejercicios del tema 3'||original.kind!=='files'||original.content.exercises.map(e=>e.id).join(',')!=='e01,e02,e03,e04,e05,e06,e07,e08'||original.content.exercises.some(e=>!e.evaluation?.cases?.length))throw new Error('Se requiere la plantilla del tema 3 con sus ocho ejercicios autoevaluables.');
+  const activity=structuredClone(original);
+  activity.content.exercises.forEach((exercise,index)=>{exercise.evaluation.preview=true;exercise.evaluation.previewProgram=`family-budget-${index+1}`;});
+  if(!activity.instructions.includes('### Vista previa interactiva'))activity.instructions+='\n\n### Vista previa interactiva\n\nAbre **Vista previa interactiva: prueba con tus datos** y pulsa **Iniciar demostración**. Escribe tus propios datos y envíalos con Enter o **Enviar dato**. El programa de referencia irá pidiendo las entradas que correspondan y mostrando los resultados esperados. En el ejercicio 8 puedes utilizar todas las opciones del menú durante una misma sesión. **Reiniciar demostración** comienza desde cero para probar otros datos. La demostración es independiente de tu código y de tu entrega.\n\nEsta simulación requiere conexión para mantener el programa de referencia en el servidor; el navegador recibe solo preguntas y resultados. Los ejemplos de prueba y la autoevaluación siguen funcionando offline con la actividad y Python descargados.';
   return activity;
 }

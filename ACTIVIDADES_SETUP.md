@@ -181,3 +181,13 @@ El profesor puede habilitar **Autoevaluación**, configurar hasta 20 casos por e
 **Ejecutar** usa el archivo abierto. **Autoevaluar ejercicio** usa el archivo asociado. Las pruebas se ejecutan localmente con Python y funcionan offline con la actividad y el motor descargados. Los resultados son orientativos: no cambian notas, entregas ni archivos, y el profesor debe revisar las estructuras utilizadas. Los casos no son secretos ni constituyen una evaluación resistente a manipulación del cliente.
 
 El rediseño de «Ejercicios del tema 3» se define en `scripts/topic3-activity.mjs`: ocho ejercicios, los mismos archivos iniciales, 30 casos. `node --env-file=.env scripts/update-topic3.mjs` actualiza únicamente la plantilla identificada, con copia local y control de versión; se niega a reaplicar el rediseño sin revisión. No modifica asignaciones existentes.
+
+### Vista previa interactiva del tema 3
+
+Las ocho simulaciones de gastos familiares se ejecutan exclusivamente en `accounts/preview-programs.mjs`, en el servidor. El cliente recibe un identificador opaco, una pregunta y texto de salida; nunca recibe Python, el programa de referencia ni respuestas del alumno. El profesor elige una simulación predefinida en la configuración de vista previa y guarda la plantilla. No se ejecuta código enviado por el usuario en el servidor.
+
+El alumno abre **Vista previa interactiva: prueba con tus datos**, inicia una demostración y responde con **Enviar dato** o Enter. Puede reiniciarla, recorrer el menú y cambiar de archivo sin alterar sus avances. Las sesiones duran 15 minutos, admiten hasta cuatro demostraciones por sesión de acceso y tienen límites de entradas y salida. Los reintentos de un dato con la misma secuencia reutilizan el resultado confirmado.
+
+La simulación requiere conexión para mantener su implementación fuera del navegador. Los ejemplos de prueba y la autoevaluación conservan su funcionamiento offline. Ninguna entrada de la demostración crea o modifica entregas, calificaciones o archivos; no se guarda en Supabase. Solo el inicio consulta la plantilla y su acceso; los siguientes datos usan el estado temporal en memoria (además de la comprobación habitual de la sesión).
+
+`node --env-file=.env scripts/enable-topic3-preview.mjs` habilita las ocho simulaciones en la plantilla existente del tema 3 con control de versión y copia local. Conserva archivos iniciales, enunciados, casos de autoevaluación y trabajos registrados.

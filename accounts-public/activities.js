@@ -18,7 +18,15 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   const notice = (text, error = false) => { $('#activities-notice').textContent = text; $('#activities-notice').hidden = !text; $('#activities-notice').className = error ? 'error' : ''; };
   const navigation = createNavigation({ window, canLeave: () => !document.querySelector('#logout:disabled') && canLeave(), onError: error => notice(error.message, true) });
   const element = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
-  const executionOptions = { stop: () => runnerCommand('aula-stop'), reset: () => runnerCommand('aula-reset'), clear: () => runnerCommand('aula-clear'), sendInput: value => runnerCommand('aula-input', { value }) };
+  const executionOptions = { stop: () => runnerCommand('aula-stop'), reset: () => runnerCommand('aula-reset'), clear: () => runnerCommand('aula-clear'), sendInput: value => runnerCommand('aula-input', { value }), preview: async (action, data) => {
+    if (window.navigator?.onLine === false) throw new Error('La vista previa interactiva necesita conexión. Los ejemplos y la autoevaluación siguen disponibles sin conexión.');
+    if (action === 'start') {
+      const context = opened?.assignment?.id ? { assignmentId: opened.assignment.id } : draft?.id ? { activityId: draft.id } : null;
+      if (!context) throw new Error('Guarda primero la plantilla para probar su simulación interactiva.');
+      return api('preview-start', { ...context, ...data }, { networkOnly: true });
+    }
+    return api('preview-input', data, { networkOnly: true });
+  } };
   function button(text, action) { const el = element('button', text); el.type = 'button'; el.onclick = () => perform(action); return el; }
   function syncControls() {
     worksheet?.syncControls();
