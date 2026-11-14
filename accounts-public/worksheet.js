@@ -213,7 +213,7 @@ export function createWorksheet(root, options) {
     if (teacher) guide.append(input(original.title, 'Título del ejercicio', value => { original.title = value; }), input(original.prompt, 'Enunciado del ejercicio', value => { original.prompt = value; renderMarkdown(prompt, value); }, true));
     guide.append(prompt);
     if (!options.free) {
-      const associated = exerciseFile(activity, original, exerciseIndex, work), label = el('label', 'exercise-file-association', 'Archivo asociado a este ejercicio: ');
+      const associated = exerciseFile(activity, original, exerciseIndex, work), label = el('div', 'exercise-file-association', 'Archivo asociado a este ejercicio: ');
       if (teacher) label.append(select(Object.keys(work.files).map(name => [name, name]), associated, 'Archivo asociado al ejercicio', value => { original.file = value; activeFile = value; changed(); }, readonly));
       else label.append(el('strong', '', associated), button('Abrir archivo del ejercicio', () => { activeFile = associated; render(); }, false, false));
       guide.append(label); evaluationPanel(original, work, guide);
