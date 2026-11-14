@@ -133,6 +133,6 @@ export function projectWorkspace(activity, answer) {
 
 // Legacy projects keep their names and contents; explicit associations take precedence.
 export function exerciseFile(activity, exercise, index, project) {
-  const candidates = [project.exerciseFiles?.[exercise.id], exercise.file, `ejercicio_${index + 1}.py`, `problema${index + 1}.py`, index ? `ejercicio_${index + 1}_1_${exercise.entry || 'main.py'}` : exercise.entry, project.entry];
+  const candidates = [project.exerciseFiles?.[exercise.id], exercise.file, `ejercicio_${index + 1}.py`, `problema${index + 1}.py`, index ? `ejercicio_${index + 1}_1_${exercise.entry || 'main.py'}` : exercise.entry, exercise.entry, project.entry];
   return candidates.find(name => name && Object.hasOwn(project.files, name)) || Object.keys(project.files)[0];
 }

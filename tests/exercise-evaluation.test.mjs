@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 import {Worker} from 'node:worker_threads';
-import {normalizeActivity,initialAnswer,validateAnswer} from '../dist/activity-model.js';
+import {normalizeActivity,initialAnswer,validateAnswer,projectWorkspace,exerciseFile} from '../dist/activity-model.js';
 import {createWorksheet} from '../accounts-public/worksheet.js';
 import {redesignTopic3} from '../scripts/topic3-activity.mjs';
 const testCase={title:'Duplicar',inputs:['21'],expected:'42',match:'exact',absent:[]};
@@ -25,6 +25,13 @@ test('asociaciones: cambiar ejercicio abre su archivo; explorar no cambia ejerci
  press(root,'Eliminar archivo');assert.equal(Object.hasOwn(saved.project.files,'nuevo.py'),false);assert.doesNotThrow(()=>validateAnswer(activity,saved));
  press(root,'← Anterior');press(root,'Siguiente →');assert.ok(root.querySelector('[aria-label="Código de uno.py"]'));
  }finally{worksheet?.destroy();dom.window.close();}
+});
+
+test('actividades antiguas asocian entradas propias y nombres repetidos sin sobrescribir archivos',()=>{
+ const activity={title:'Anterior',kind:'files',content:{exercises:[{id:'a',title:'A',prompt:'',files:{'primero.py':'# A'},entry:'primero.py',lockedFiles:[]},{id:'b',title:'B',prompt:'',files:{'segundo.py':'# B'},entry:'segundo.py',lockedFiles:[]}]}};
+ let project=projectWorkspace(activity);assert.equal(exerciseFile(activity,activity.content.exercises[1],1,project),'segundo.py');
+ activity.content.exercises[1].files={'primero.py':'# B'};activity.content.exercises[1].entry='primero.py';project=projectWorkspace(activity);
+ assert.equal(exerciseFile(activity,activity.content.exercises[1],1,project),'ejercicio_2_1_primero.py');assert.equal(project.files['primero.py'],'# A');assert.equal(project.files['ejercicio_2_1_primero.py'],'# B');
 });
 
 test('autoevaluar usa el archivo asociado, conserva fuentes y presenta resultados y ejemplos sin código de solución',()=>{
