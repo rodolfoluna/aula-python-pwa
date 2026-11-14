@@ -124,7 +124,7 @@ export function createWorksheet(root, options) {
     if (teacher) {
       const settings = el('details', 'evaluation-settings'); settings.append(el('summary', '', 'Configurar pruebas y vista previa'));
       const label = el('label', 'inline-label'), preview = el('input'); preview.type = 'checkbox'; preview.checked = config.preview; preview.disabled = readonly; preview.onchange = () => { config.preview = preview.checked; changed(); }; label.append(preview, el('span', '', 'Mostrar vista previa del funcionamiento esperado')); settings.append(label);
-      settings.append(select(previewChoices, config.previewProgram || '', 'Simulación interactiva', value => { if (value) config.previewProgram = value; else delete config.previewProgram; changed(); }, readonly), el('p', 'muted', 'Las simulaciones se ejecutan en el servidor y requieren conexión. Guarda la plantilla antes de probarlas. Los programas de referencia no se descargan ni se incluyen en los archivos del alumno.'));
+      settings.append(select(previewChoices, config.previewProgram || '', 'Simulación interactiva', value => { if (value) config.previewProgram = value; else delete config.previewProgram; changed(); }, readonly), el('p', 'muted', 'Las simulaciones se ejecutan en WebAssembly y quedan disponibles al preparar la app sin conexión. El código de referencia no se muestra ni se incluye en los archivos del alumno.'));
       settings.append(el('p', 'muted', 'Una entrada por línea, en el orden de input(). Las líneas vacías también cuentan. No se comparan los textos de las preguntas de input(). La salida esperada contiene solo lo que imprime el programa. No introduzcas código de solución.'));
       config.cases.forEach((test, index) => {
         const box = el('fieldset'), legend = el('legend', '', `Caso ${index + 1}`); box.append(legend);
@@ -159,7 +159,7 @@ export function createWorksheet(root, options) {
       const key = exercise.id + ':' + (config.previewProgram || ''), state = previews.get(key) || {};
       previews.set(key, state); demo.open = state.open === true; demo.ontoggle = () => { state.open = demo.open; };
       demo.append(el('summary', '', config.previewProgram ? 'Vista previa interactiva: prueba con tus datos' : 'Vista previa: funcionamiento esperado'));
-      if (config.previewProgram) { const consoleRoot = el('div', 'interactive-preview'); demo.append(consoleRoot); mountInteractivePreview(consoleRoot, { state, request: options.preview, exerciseId: exercise.id }); }
+      if (config.previewProgram) { const consoleRoot = el('div', 'interactive-preview'); demo.append(consoleRoot); mountInteractivePreview(consoleRoot, { state, request: options.preview, exerciseId: exercise.id, program: config.previewProgram }); }
       const examples = el('details', 'preview-examples'); examples.append(el('summary', '', 'Ejemplos de prueba'), el('p', 'muted', 'Entradas y salidas de los casos preparados por el profesor, sin código de solución.'));
       const view = el('div');
       const show = index => { const test = config.cases[index]; view.replaceChildren(el('h4', '', 'Entradas del usuario'), el('pre', '', test.inputs.map((value, index) => `${index + 1}. > ${value}`).join('\n') || '(no se solicitan datos)'), el('h4', '', 'Salida esperada'), el('pre', '', test.expected)); };

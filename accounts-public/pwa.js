@@ -1,3 +1,4 @@
+import { ensurePreviewRuntime } from './preview-wasm.js';
 import { DraftSync } from './draft-sync.js';
 import { validateAnswer } from '../dist/activity-model.js';
 import { sameAnswer } from '../dist/answer-patch.js';
@@ -43,7 +44,7 @@ export async function syncPending({ profile, storage, api, current = () => null 
   return { saved, held };
 }
 
-export function setupPwa({ workspace, api, getProfile, getRunnerOrigin, current, canReload = () => true, isBusy = () => false, perform, reload = () => location.reload() }) {
+export function setupPwa({ workspace, api, getProfile, getRunnerOrigin, current, canReload = () => true, isBusy = () => false, perform, preparePreview = ensurePreviewRuntime, reload = () => location.reload() }) {
   const $ = id => document.getElementById(id);
   if (!$('pwa-status')) return { render() {}, resume() {}, wait: async () => {} };
   let prompt, job, preparing = false, detail = '', worker, nextAttempt = 0, registration, reloadAfterUpdate = false;
@@ -99,10 +100,12 @@ export function setupPwa({ workspace, api, getProfile, getRunnerOrigin, current,
       for (const assignment of catalog.assignments) opened.push(await api('activity-open', { assignmentId: assignment.id }, { networkOnly: true }));
       if (getProfile()?.id !== profile.id) throw new Error('La sesión cambió durante la preparación.');
       await preparePython();
+      detail = 'Preparando vista previa WebAssembly…'; render();
+      await preparePreview();
       if (getProfile()?.id !== profile.id) throw new Error('La sesión cambió durante la preparación.');
       await workspace.prepare(profile, status, catalog, groups, opened);
       await navigator.storage?.persist?.().catch(() => false);
-      detail = `Listo: ${opened.length} actividad(es), Python y Matplotlib disponibles sin conexión. Los avances se sincronizan al volver Internet con la app abierta. La entrega final requiere conexión.`;
+      detail = `Listo: ${opened.length} actividad(es), Python y Matplotlib disponibles sin conexión. Vista previa WebAssembly preparada. Los avances se sincronizan al volver Internet con la app abierta. La entrega final requiere conexión.`;
     } catch (error) { detail = `Preparación incompleta: ${error.message} Reintenta con Internet antes de trabajar sin conexión.`; throw error; }
     finally { preparing = false; render(); }
   });

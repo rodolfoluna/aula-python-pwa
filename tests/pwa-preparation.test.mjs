@@ -4,7 +4,7 @@ import {JSDOM} from 'jsdom';
 import {IDBFactory} from 'fake-indexeddb';
 import {setupPwa} from '../accounts-public/pwa.js';
 
-for (const succeeds of [false, true]) test(`preparación offline solo se confirma después de descargar Python: ${succeeds}`, async () => {
+for (const [succeeds,previewSucceeds] of [[false,true],[true,true],[true,false]]) test(`preparación offline exige Python y WebAssembly: ${succeeds}/${previewSucceeds}`, async () => {
   const dom=new JSDOM('<button id="prepare-offline"></button><button id="sync-offline"></button><button id="install-app"></button><p id="pwa-status"></p>',{url:'https://aula.test'});
   const previousNavigator=globalThis.navigator, previousIndexedDB=globalThis.indexedDB; globalThis.indexedDB=new IDBFactory();
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,location:dom.window.location,localStorage:dom.window.localStorage,confirm:()=>true});
@@ -23,12 +23,12 @@ for (const succeeds of [false, true]) test(`preparación offline solo se confirm
   const originalInterval=globalThis.setInterval;
   globalThis.setInterval=(...args)=>{fakeTimer=originalInterval(...args);return fakeTimer;};
   try {
-    const pwa=setupPwa({workspace,isBusy:()=>busy,getProfile:()=>profile,getRunnerOrigin:()=> 'https://runner.test',perform:action=>{pending=action();},api:async path=>path==='activities'?{assignments:[]}:path==='my-groups'?{groups:[]}:{configured:true}});
+    const pwa=setupPwa({preparePreview:async()=>{if(!previewSucceeds)throw new Error('WebAssembly no disponible');},workspace,isBusy:()=>busy,getProfile:()=>profile,getRunnerOrigin:()=> 'https://runner.test',perform:action=>{pending=action();},api:async path=>path==='activities'?{assignments:[]}:path==='my-groups'?{groups:[]}:{configured:true}});
     assert.equal(document.querySelector('#prepare-offline').disabled,true);assert.equal(document.querySelector('#sync-offline').disabled,true);
     busy=false;pwa.render();assert.equal(document.querySelector('#prepare-offline').disabled,false);
     document.querySelector('#prepare-offline').click();
-    if(succeeds){await pending;assert.equal(committed,1);assert.match(document.querySelector('#pwa-status').textContent,/Listo:/);}
-    else{await assert.rejects(pending,/Descarga interrumpida/);assert.equal(committed,0);assert.match(document.querySelector('#pwa-status').textContent,/Preparación incompleta/);}
+    if(succeeds&&previewSucceeds){await pending;assert.equal(committed,1);assert.match(document.querySelector('#pwa-status').textContent,/Listo:/);}
+    else{await assert.rejects(pending,succeeds?/WebAssembly no disponible/:/Descarga interrumpida/);assert.equal(committed,0);assert.match(document.querySelector('#pwa-status').textContent,/Preparación incompleta/);}
   } finally {clearInterval(fakeTimer);globalThis.setInterval=originalInterval;globalThis.indexedDB=previousIndexedDB;dom.window.close();Object.defineProperty(globalThis,'navigator',{value:previousNavigator,configurable:true});}
 });
 

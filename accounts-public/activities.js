@@ -1,5 +1,6 @@
 import { normalizeActivity, validateAnswer, newActivity, clone } from '../dist/activity-model.js';
 import { renderMarkdown } from '../dist/markdown.js';
+import { createLocalPreviewClient } from './preview-wasm.js';
 import { createWorksheet } from './worksheet.js';
 import { DraftSync } from './draft-sync.js';
 import { PollBudget } from './sync-policy.js';
@@ -18,15 +19,8 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   const notice = (text, error = false) => { $('#activities-notice').textContent = text; $('#activities-notice').hidden = !text; $('#activities-notice').className = error ? 'error' : ''; };
   const navigation = createNavigation({ window, canLeave: () => !document.querySelector('#logout:disabled') && canLeave(), onError: error => notice(error.message, true) });
   const element = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
-  const executionOptions = { stop: () => runnerCommand('aula-stop'), reset: () => runnerCommand('aula-reset'), clear: () => runnerCommand('aula-clear'), sendInput: value => runnerCommand('aula-input', { value }), preview: async (action, data) => {
-    if (window.navigator?.onLine === false) throw new Error('La vista previa interactiva necesita conexión. Los ejemplos y la autoevaluación siguen disponibles sin conexión.');
-    if (action === 'start') {
-      const context = opened?.assignment?.id ? { assignmentId: opened.assignment.id } : draft?.id ? { activityId: draft.id } : null;
-      if (!context) throw new Error('Guarda primero la plantilla para probar su simulación interactiva.');
-      return api('preview-start', { ...context, ...data }, { networkOnly: true });
-    }
-    return api('preview-input', data, { networkOnly: true });
-  } };
+  const localPreview = createLocalPreviewClient();
+  const executionOptions = { stop: () => runnerCommand('aula-stop'), reset: () => runnerCommand('aula-reset'), clear: () => runnerCommand('aula-clear'), sendInput: value => runnerCommand('aula-input', { value }), preview: (action, data) => localPreview.request(action, data) };
   function button(text, action) { const el = element('button', text); el.type = 'button'; el.onclick = () => perform(action); return el; }
   function syncControls() {
     worksheet?.syncControls();
@@ -45,7 +39,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     target.tabIndex = -1; target.focus(); target.scrollIntoView?.({ block: 'start' });
   }
   function teardown() {
-    epoch++;
+    epoch++; localPreview.clear();
     if ($('#execution-area').dataset.legacy === 'true') { notice(''); delete $('#execution-area').dataset.legacy; }
     clearInterval(ticker); clearTimeout(runnerTimer); ticker = null; frame?.remove(); frame = null; queued = null; runnerBusy = false; runnerReady = false;
     worksheet?.destroy(); worksheet = null; sync = null; opened = null; draft = null; draftDirty = false; reviewDirty = false; reviewedStudent = null; $('#activity-workspace').hidden = true; screen('catalog');

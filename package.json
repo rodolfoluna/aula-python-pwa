@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:preview": "node scripts/build-preview.mjs",
     "build:editor": "node scripts/build-editor.mjs",
     "build:windows-export": "node scripts/build-windows-export.mjs",
     "dev": "node server.mjs",
@@ -32,6 +33,7 @@
     "@codemirror/view": "6.43.15",
     "@electric-sql/pglite": "0.5.10",
     "@lezer/highlight": "1.2.5",
+    "assemblyscript": "0.28.20",
     "codemirror": "6.0.2",
     "esbuild": "0.28.2",
     "fake-indexeddb": "6.2.4",

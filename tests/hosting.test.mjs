@@ -31,7 +31,8 @@ test('HTTPS publicado: cookie segura, CSRF por origen, cabeceras y secretos inac
     const login = origin => fetch(base + '/api/login', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ login: 'teacher@example.com', password: 'PruebaSegura1234' }) });
     assert.equal((await login('https://python.example')).status, 403);
     const response = await login('https://aula.example'); assert.equal(response.status, 200); assert.match(response.headers.get('set-cookie'), /; Secure/);
-    for (const path of ['/.env', '/render.yaml', '/accounts/server.mjs', '/python-worker.js']) assert.equal((await fetch(base + path)).status, 404);
+    const wasm = await fetch(base + '/simulators/family-budget-v1.wasm'); assert.equal(wasm.status, 200); assert.equal(wasm.headers.get('content-type'), 'application/wasm'); assert.match(page.headers.get('content-security-policy'), /'wasm-unsafe-eval'/);
+    for (const path of ['/simulators/family-budget.ts', '/simulators/family-budget-v1.wasm.map', '/.env', '/render.yaml', '/accounts/server.mjs', '/python-worker.js']) assert.equal((await fetch(base + path)).status, 404);
     assert.deepEqual(await (await fetch(base + '/healthz')).json(), { ok: true });
   } finally { await new Promise(resolve => server.close(resolve)); }
 });

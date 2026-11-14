@@ -14,7 +14,8 @@ const publicRoot = new URL('../accounts-public/', import.meta.url);
 const hash = value => createHash('sha256').update(value).digest('hex');
 const SESSION_MS = 8 * 60 * 60 * 1000;
 const extraModules = new Map([['/dist/answer-patch.js', ['../dist/answer-patch.js', 'text/javascript']], ['/sync-policy.js', ['sync-policy.js', 'text/javascript']]]);
-for (const name of ['pwa.js', 'offline-store.js', 'sw.js', 'shell-assets.js', 'navigation.js', 'theme.js', 'code-editor.js', 'project-downloads.js', 'interactive-preview.js', 'windows-runtime.js', 'vendor/code-editor.js']) extraModules.set('/' + name, [name, 'text/javascript']);
+for (const name of ['pwa.js', 'offline-store.js', 'sw.js', 'shell-assets.js', 'navigation.js', 'theme.js', 'code-editor.js', 'project-downloads.js', 'interactive-preview.js', 'preview-wasm.js', 'preview-runtime.js', 'windows-runtime.js', 'vendor/code-editor.js']) extraModules.set('/' + name, [name, 'text/javascript']);
+extraModules.set('/simulators/family-budget-v1.wasm', ['simulators/family-budget-v1.wasm', 'application/wasm']);
 extraModules.set('/manifest.webmanifest', ['manifest.webmanifest', 'application/manifest+json']);
 extraModules.set('/vendor/code-editor.LICENSE.txt', ['vendor/code-editor.LICENSE.txt', 'text/plain']);
 for (const size of [192, 512]) extraModules.set(`/icons/icon-${size}.png`, [`icons/icon-${size}.png`, 'image/png']);
@@ -44,7 +45,7 @@ export function createAccountsServer({ store, configError, secure = false, origi
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin'); res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
     res.setHeader('Permissions-Policy', `cross-origin-isolated=(self "${runnerOrigin}")`);
     const styleNonce = randomBytes(18).toString('base64');
-    res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self' 'nonce-${styleNonce}'; connect-src 'self'; frame-src ${runnerOrigin}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`);
+    res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'nonce-${styleNonce}'; connect-src 'self'; frame-src ${runnerOrigin}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`);
     try {
       const path = new URL(req.url, 'http://local').pathname;
       if (path === '/healthz' && req.method === 'GET') { json(res, store ? 200 : 503, { ok: !!store }); return; }
@@ -55,7 +56,7 @@ export function createAccountsServer({ store, configError, secure = false, origi
         }
         const file = staticFiles.get(path) || extraModules.get(path);
         if (!file || req.method !== 'GET') { res.writeHead(404).end(); return; }
-        res.setHeader('Content-Type', file[1] + '; charset=utf-8');
+        res.setHeader('Content-Type', file[1] === 'application/wasm' ? file[1] : file[1] + '; charset=utf-8');
         const bytes = await readFile(new URL(file[0], publicRoot));
         res.end(path === '/' ? bytes.toString('utf8').replace('<!--STYLE_NONCE-->', `<meta name="style-nonce" content="${styleNonce}">`) : bytes); return;
       }

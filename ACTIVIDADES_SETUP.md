@@ -182,12 +182,16 @@ El profesor puede habilitar **Autoevaluación**, configurar hasta 20 casos por e
 
 El rediseño de «Ejercicios del tema 3» se define en `scripts/topic3-activity.mjs`: ocho ejercicios, los mismos archivos iniciales, 30 casos. `node --env-file=.env scripts/update-topic3.mjs` actualiza únicamente la plantilla identificada, con copia local y control de versión; se niega a reaplicar el rediseño sin revisión. No modifica asignaciones existentes.
 
-### Vista previa interactiva del tema 3
+### Vista previa interactiva offline del tema 3
 
-Las ocho simulaciones de gastos familiares se ejecutan exclusivamente en `accounts/preview-programs.mjs`, en el servidor. El cliente recibe un identificador opaco, una pregunta y texto de salida; nunca recibe Python, el programa de referencia ni respuestas del alumno. El profesor elige una simulación predefinida en la configuración de vista previa y guarda la plantilla. No se ejecuta código enviado por el usuario en el servidor.
+Las ocho simulaciones de gastos familiares se compilan desde `simulators/family-budget.ts` a `accounts-public/simulators/family-budget-v1.wasm`. El navegador ejecuta ese binario sin descargar el código fuente, símbolos de depuración ni mapas de fuentes. El cargador JavaScript solo maneja el protocolo de consola y la memoria UTF-8; las validaciones, los cálculos y el menú se ejecutan dentro de WebAssembly. El módulo no tiene acceso a los archivos del alumno y nunca se añade al proyecto, ZIP o ejecutable que descarga.
 
-El alumno abre **Vista previa interactiva: prueba con tus datos**, inicia una demostración y responde con **Enviar dato** o Enter. Puede reiniciarla, recorrer el menú y cambiar de archivo sin alterar sus avances. Las sesiones duran 15 minutos, admiten hasta cuatro demostraciones por sesión de acceso y tienen límites de entradas y salida. Los reintentos de un dato con la misma secuencia reutilizan el resultado confirmado.
+El alumno abre **Vista previa interactiva: prueba con tus datos**, inicia una demostración y responde con **Enviar dato** o Enter. Puede reiniciarla y cambiar de archivo sin alterar sus avances. Las sesiones son locales a la actividad abierta y no escriben datos en Supabase ni llaman a la API de simulación. El límite por demostración es de 500 entradas y unos 100 KB de salida.
 
-La simulación requiere conexión para mantener su implementación fuera del navegador. Los ejemplos de prueba y la autoevaluación conservan su funcionamiento offline. Ninguna entrada de la demostración crea o modifica entregas, calificaciones o archivos; no se guarda en Supabase. Solo el inicio consulta la plantilla y su acceso; los siguientes datos usan el estado temporal en memoria (además de la comprobación habitual de la sesión).
+**Preparar sin conexión** comprueba el SHA-256 del binario, lo compila y conserva una copia local antes de confirmar la preparación. La caché de interfaz también incluye el módulo y su cargador. Actualizar la interfaz conserva los borradores e IndexedDB. Si falta o está dañada la descarga, la preparación se marca como incompleta y no se anuncia que la simulación está disponible offline. Se mantiene el servicio anterior para clientes que todavía no hayan actualizado.
 
-`node --env-file=.env scripts/enable-topic3-preview.mjs` habilita las ocho simulaciones en la plantilla existente del tema 3 con control de versión y copia local. Conserva archivos iniciales, enunciados, casos de autoevaluación y trabajos registrados.
+El binario compilado permite inspección e ingeniería inversa; no constituye protección absoluta del algoritmo. La app no muestra ni exporta el código fuente de referencia.
+
+Ejecuta `npm run build:preview` al modificar la referencia. AssemblyScript está fijado en `package-lock.json`. Se comprueban el hash de la fuente normalizada, la integridad del artefacto y la paridad con los 30 casos y datos adicionales. El binario y su manifiesto se versionan en el repositorio; Render sirve el artefacto verificado sin necesitar el compilador en producción.
+
+`node --env-file=.env scripts/enable-topic3-offline-preview.mjs` actualiza únicamente las instrucciones de la plantilla del tema 3 con control de versión y copia local. Las asignaciones ya descargadas con los identificadores `family-budget-1` a `family-budget-8` funcionan con el nuevo motor sin modificar sus archivos ni respuestas.
