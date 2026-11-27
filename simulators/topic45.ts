@@ -33,7 +33,7 @@ function loanLine(i:i32):string{return 'Préstamo '+(i+1).toString()+': '+loanNa
 function loanHistory(pending:bool=false):void{if(!loanNames.length){say('Sin préstamos registrados');return;}let found=false;for(let i=0;i<loanNames.length;i++)if(!pending||active[i]){say(loanLine(i));found=true;}if(!found)say('Sin préstamos pendientes');}
 function loanReport():void{let pending=0,units=0;for(let i=0;i<active.length;i++)if(active[i]){pending++;units+=quantities[i];}say('Préstamos: '+active.length.toString());say('Pendientes: '+pending.toString());say('Devueltos: '+(active.length-pending).toString());say('Unidades pendientes: '+units.toString());for(let c=0;c<3;c++){let q=0;for(let i=0;i<active.length;i++)if(active[i]&&loanCodes[i]==toolCodes[c])q+=quantities[i];say(toolCodes[c]+' | '+tools[c]+' | Disponibles: '+stock[c].toString()+' | Pendientes: '+q.toString()+' | Total controlado: '+(stock[c]+q).toString());}}
 function laundryQuote():void{if(name.length)say('Cliente: '+name);say('Servicio: '+serviceName(code));say('Peso: '+fixed(weight)+' kg');say('Tarifa: '+money(code=='1'?18:30)+' por kg');say('Modalidad: '+(express?'Exprés':'Normal'));say('Frecuente: '+(frequent?'Sí':'No'));say('Subtotal: '+money(subtotal));say('Descuento: '+money(subtotal*(frequent?.10:0)));say('Recargo: '+money(subtotal*(express?.20:0)));say('Total: '+money(finalAmount(subtotal,express,frequent)));}
-function askLaundry():void{name='';if(exercise>=5)ask('Cliente:',10);else ask('Servicio: 1 Ropa, 2 Cobijas',11);}
+function askLaundry():void{name='';if(exercise>=5&&exercise!=7)ask('Cliente:',10);else ask('Servicio: 1 Ropa, 2 Cobijas',11);}
 function completeLaundry():void{
  subtotal=weight*(code=='1'?18:30);
  if(exercise==7){say('Subtotal: '+money(subtotal));finish();return;}

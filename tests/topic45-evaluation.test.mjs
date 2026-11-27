@@ -21,6 +21,18 @@ test('ambas plantillas conservan archivos y ejercicios: 24 vistas WebAssembly, 7
  }
  await assert.rejects(upgradeTopic45(base('Otra actividad'),simulate),/inesperada/);
 });
+test('las 24 vistas previas terminan con entradas propias adecuadas al ejercicio',async()=>{
+ const inputs={laundry:[[],['Luz','Bolsa','Hoy'],['1',3.5,'0'],[1,'2',1,'1'],[0],[],['2',2.5],[100,'1',.1],['Ana','1',1,'0','0',0],['0'],['0'],['3','Ana','1',3.5,'0','0','3','Luis','2',2.5,'1','1','5','0']], 'tool-loans':[[],['Raúl','Martillo','Reparación'],['M',2],[1,'P','2',3],[0],[],['D'],[4,3,3],['Ana','M','1',1],['0'],['0'],['4','Ana','M','1',2,'4','Cora','D','2',3,'5',2,'7','0']]};
+ for(const domain of ['laundry','tool-loans'])for(const[index,data]of inputs[domain].entries()){
+  const output=await simulate(`${domain}-${index+1}`,data);
+  if(domain==='laundry'&&index===6)assert.equal(output,'Subtotal: $75.00\n');
+  if(domain==='laundry'&&index===7)assert.equal(output,'Total: $110.00\n');
+  if(domain==='laundry'&&index===11)assert.match(output,/Total: \$145.50/);
+  if(domain==='tool-loans'&&index===6)assert.equal(output,'Índice: 1\n');
+  if(domain==='tool-loans'&&index===7)assert.equal(output,'Resultado: True\n');
+  if(domain==='tool-loans'&&index===11){assert.match(output,/Devueltos: 1/);assert.match(output,/M \| Martillo \| Disponibles: 2 \| Pendientes: 2 \| Total controlado: 4/);}
+ }
+});
 test('contratos rechazan código ejecutable y referencias inexistentes; el formato admite retorno None y salida vacía',()=>{
  const valid={preview:true,previewProgram:'laundry-8',cases:[{title:'Contrato',inputs:[],expected:'',match:'exact',checks:{fixtures:{values:[1,2]},calls:[{name:'sumar',args:[{ref:'values'}],expected:3,silent:true,unchanged:true}]}}]};
  assert.equal(normalizeEvaluation(valid).cases[0].checks.calls[0].expected,3);
