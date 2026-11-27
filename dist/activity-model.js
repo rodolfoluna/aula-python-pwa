@@ -19,12 +19,35 @@ function cell(value) {
   return { id: value.id, type: value.type, title: text(value.title, 160, 'El título de celda'), code: text(value.code, 100000, 'El contenido de celda'), locked: value.locked, metadata: { ...(value.metadata?.deletable === false ? { deletable: false } : {}) } };
 }
 function sizeCheck(value) { if (new TextEncoder().encode(JSON.stringify(value)).length > 512000) throw new Error('El contenido supera 500 KB. Reduce el código o las instrucciones.'); return value; }
+function functionChecks(value) {
+  const identifier = name => typeof name === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(name) && !name.startsWith('_');
+  function literal(item, depth = 0) {
+    if (depth > 4) throw new Error('Datos de función demasiado anidados.');
+    if (item === null || typeof item === 'boolean' || typeof item === 'number' && Number.isFinite(item)) return item;
+    if (typeof item === 'string') return text(item, 1000, 'El dato de prueba');
+    if (Array.isArray(item) && item.length <= 100) return item.map(child => literal(child, depth + 1));
+    throw new Error('Dato de prueba de función inválido.');
+  }
+  if (!record(value) || !record(value.fixtures) || !Array.isArray(value.calls) || !value.calls.length || value.calls.length > 50) throw new Error('Pruebas de funciones inválidas.');
+  const fixtures = {};
+  for (const [name, data] of Object.entries(value.fixtures)) { if (!identifier(name)) throw new Error('Nombre de dato inválido.'); fixtures[name] = literal(data); }
+  if (Object.keys(fixtures).length > 30) throw new Error('Demasiados datos de prueba.');
+  const argument = data => record(data) && Object.keys(data).length === 1 && Object.hasOwn(fixtures, data.ref) ? { ref: data.ref } : literal(data);
+  const calls = value.calls.map(call => {
+    if (!record(call) || !identifier(call.name) || !Array.isArray(call.args) || call.args.length > 20 || !Object.hasOwn(call, 'expected')) throw new Error('Llamada de prueba inválida.');
+    const kwargs = {}, after = {};
+    for (const [name, data] of Object.entries(call.kwargs || {})) { if (!identifier(name)) throw new Error('Parámetro inválido.'); kwargs[name] = argument(data); }
+    for (const [name, data] of Object.entries(call.after || {})) { if (!Object.hasOwn(fixtures, name)) throw new Error('Dato a comprobar inexistente.'); after[name] = literal(data); }
+    return { name: call.name, args: call.args.map(argument), kwargs, expected: literal(call.expected), after, silent: call.silent === true, unchanged: call.unchanged === true };
+  });
+  return { fixtures, calls };
+}
 export function normalizeEvaluation(value) {
   if (!record(value) || !Array.isArray(value.cases) || !value.cases.length || value.cases.length > 20) throw new Error('La autoevaluación necesita entre 1 y 20 casos.');
-  if (value.previewProgram !== undefined && !/^family-budget-[1-8]$/.test(value.previewProgram)) throw new Error('Simulación interactiva inválida.');
+  if (value.previewProgram !== undefined && !/^(family-budget-[1-8]|(?:laundry|tool-loans)-(?:[1-9]|1[0-2]))$/.test(value.previewProgram)) throw new Error('Simulación interactiva inválida.');
   return { cases: value.cases.map(item => {
     if (!record(item) || !Array.isArray(item.inputs) || item.inputs.length > 300 || !['exact', 'lines'].includes(item.match)) throw new Error('Caso de prueba inválido.');
-    return { title: text(item.title, 160, 'El nombre del caso', false), inputs: item.inputs.map(value => text(value, 1000, 'La entrada')), expected: text(item.expected, 20000, 'La salida esperada', false), match: item.match,
+    return { title: text(item.title, 160, 'El nombre del caso', false), inputs: item.inputs.map(value => text(value, 1000, 'La entrada')), expected: text(item.expected, 20000, 'La salida esperada', !item.checks ? false : true), match: item.match, ...(item.checks ? { checks: functionChecks(item.checks) } : {}),
       absent: (Array.isArray(item.absent) ? item.absent : []).slice(0, 30).map(value => text(value, 160, 'La salida que debe omitirse', false)) };
   }), preview: value.preview === true, ...(value.previewProgram ? { previewProgram: value.previewProgram } : {}) };
 }

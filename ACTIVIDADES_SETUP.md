@@ -195,3 +195,13 @@ El binario compilado permite inspección e ingeniería inversa; no constituye pr
 Ejecuta `npm run build:preview` al modificar la referencia. AssemblyScript está fijado en `package-lock.json`. Se comprueban el hash de la fuente normalizada, la integridad del artefacto y la paridad con los 30 casos y datos adicionales. El binario y su manifiesto se versionan en el repositorio; Render sirve el artefacto verificado sin necesitar el compilador en producción.
 
 `node --env-file=.env scripts/enable-topic3-offline-preview.mjs` actualiza únicamente las instrucciones de la plantilla del tema 3 con control de versión y copia local. Las asignaciones ya descargadas con los identificadores `family-budget-1` a `family-budget-8` funcionan con el nuevo motor sin modificar sus archivos ni respuestas.
+
+### Autoevaluación y demostraciones del tema 4_5
+
+Las plantillas «Ejercicios del tema 4_5» y «Problemario del tema 4_5» se amplían con 39 casos cada una. Los ejercicios 1 a 5 y 12 prueban programas completos; 6 a 11 prueban funciones mediante contratos declarativos (fixtures, llamadas, argumentos, retornos y estado posterior). El trabajador Python extrae las definiciones de funciones con AST y omite el programa principal para esos contratos. Las pruebas distinguen booleanos de números, comprueban argumentos predeterminados y por nombre, y detectan lectura/impresión o mutaciones prohibidas. No incluyen una implementación de referencia.
+
+El profesor puede conservar y modificar los contratos JSON válidos al editar la plantilla. El alumno ve los datos y resultados esperados, y sus comprobaciones se ejecutan localmente en Python. Son orientativas y no asignan notas oficiales; las restricciones de estructuras y la claridad siguen sujetas a revisión del profesor.
+
+El motor compilado `classroom-v2.wasm` conserva las ocho simulaciones familiares e incorpora doce de lavandería y doce de préstamos. La lógica adicional se autoriza en `simulators/topic45.ts` y se compila con `npm run build:preview`; se versionan el artefacto sin símbolos ni mapas y los hashes de todas sus fuentes. Las vistas de los ejercicios 10 y 11 son laboratorios con menú: no exigen al alumno añadir un menú a esas prácticas. La interfaz, el motor y Python quedan disponibles al preparar offline. El binario y las fuentes permanecen separados de los archivos y exportaciones del alumno.
+
+`node --env-file=.env scripts/apply-topic45-evaluation.mjs` actualiza únicamente las dos plantillas conocidas con control de versión y copias locales. Se niega a reaplicar sobre pruebas ya existentes. Conserva archivos, títulos de ejercicios, IDs y asociaciones; no crea asignaciones ni modifica respuestas. Las asignaciones existentes conservan su snapshot.

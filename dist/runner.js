@@ -92,4 +92,4 @@ function submitInput(value) { const bytes = new TextEncoder().encode(value); if 
 $('#input-form').onsubmit = event => { event.preventDefault(); submitInput($('#input').value); };
 for (const type of ['copy', 'cut', 'paste', 'drop']) document.addEventListener(type, event => { if (student) event.preventDefault(); }, true);
 window.addEventListener('pagehide', destroy);
-tell('aula-ready', { protocol: 2, evaluation: 1 });
+tell('aula-ready', { protocol: 2, evaluation: 1, functionEvaluation: 1 });

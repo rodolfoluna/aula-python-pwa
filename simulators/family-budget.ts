@@ -15,7 +15,7 @@ let inputBytes = new ArrayBuffer(0), response = new ArrayBuffer(0);
 function say(text: string): void { output += text + '\n'; }
 function ask(text: string, next: i32): void { prompt = text; stage = next; }
 function finish(): void { done = true; prompt = ''; stage = 0; }
-function money(value: f64): string {
+export function money(value: f64): string {
   const bits = reinterpret<u64>(Math.abs(value));
   const exponent = i32((bits >> 52) & 2047);
   const fraction = bits & ((u64(1) << 52) - 1);
@@ -31,7 +31,7 @@ function money(value: f64): string {
   const decimals = (rounded % 100).toString();
   return '$' + ((reinterpret<u64>(value) >> 63) != 0 ? '-' : '') + (rounded / 100).toString() + '.' + (decimals.length < 2 ? '0' : '') + decimals;
 }
-function number(text: string, integer: bool = false): f64 {
+export function number(text: string, integer: bool = false): f64 {
   const value = text.trim(); let i = 0, digits = 0;
   if (value.length && (value.charAt(0) == '+' || value.charAt(0) == '-')) i++;
   while (i < value.length && value.charCodeAt(i) >= 48 && value.charCodeAt(i) <= 57) { i++; digits++; }
@@ -64,7 +64,7 @@ function report(): void {
 }
 function showMenu(): void { say(menu); ask('Elige una opción:', 50); }
 function askCount(): void { ask(exercise == 5 ? 'Cantidad de gastos (1 a 20):' : 'Cantidad de gastos (0 a 20):', 30); }
-function quote(text: string): string {
+export function quote(text: string): string {
   let result = '"';
   for (let i = 0; i < text.length; i++) { const code = text.charCodeAt(i);
     if (code == 34) result += '\\"'; else if (code == 92) result += '\\\\'; else if (code == 10) result += '\\n'; else if (code == 13) result += '\\r'; else if (code == 9) result += '\\t';

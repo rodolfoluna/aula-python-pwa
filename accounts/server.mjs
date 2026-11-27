@@ -15,6 +15,7 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 const SESSION_MS = 8 * 60 * 60 * 1000;
 const extraModules = new Map([['/dist/answer-patch.js', ['../dist/answer-patch.js', 'text/javascript']], ['/sync-policy.js', ['sync-policy.js', 'text/javascript']]]);
 for (const name of ['pwa.js', 'offline-store.js', 'sw.js', 'shell-assets.js', 'navigation.js', 'theme.js', 'code-editor.js', 'project-downloads.js', 'interactive-preview.js', 'preview-wasm.js', 'preview-runtime.js', 'windows-runtime.js', 'vendor/code-editor.js']) extraModules.set('/' + name, [name, 'text/javascript']);
+extraModules.set('/simulators/classroom-v2.wasm', ['simulators/classroom-v2.wasm', 'application/wasm']);
 extraModules.set('/simulators/family-budget-v1.wasm', ['simulators/family-budget-v1.wasm', 'application/wasm']);
 extraModules.set('/manifest.webmanifest', ['manifest.webmanifest', 'application/manifest+json']);
 extraModules.set('/vendor/code-editor.LICENSE.txt', ['vendor/code-editor.LICENSE.txt', 'text/plain']);

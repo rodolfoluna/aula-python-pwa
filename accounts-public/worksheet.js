@@ -120,7 +120,7 @@ export function createWorksheet(root, options) {
     }
     if (!exercise.evaluation) { if (teacher) guide.append(panel); return; }
     const config = exercise.evaluation;
-    panel.append(el('h3', '', 'Comprobar mi solución'), el('p', 'muted', 'Pruebas orientativas de entradas y salidas. No sustituyen la calificación del profesor ni la revisión de las estructuras utilizadas. Se ejecuta el archivo asociado al ejercicio; tus archivos no se modifican.'));
+    panel.append(el('h3', '', 'Comprobar mi solución'), el('p', 'muted', 'Pruebas orientativas de entradas, salidas y contratos de funciones. No sustituyen la calificación del profesor ni la revisión de las estructuras utilizadas. Se ejecuta el archivo asociado al ejercicio; tus archivos no se modifican.'));
     if (teacher) {
       const settings = el('details', 'evaluation-settings'); settings.append(el('summary', '', 'Configurar pruebas y vista previa'));
       const label = el('label', 'inline-label'), preview = el('input'); preview.type = 'checkbox'; preview.checked = config.preview; preview.disabled = readonly; preview.onchange = () => { config.preview = preview.checked; changed(); }; label.append(preview, el('span', '', 'Mostrar vista previa del funcionamiento esperado')); settings.append(label);
@@ -132,6 +132,7 @@ export function createWorksheet(root, options) {
         field('Nombre del caso', test.title, value => { test.title = value; }, false);
         field('Entradas (una por línea)', test.inputs.join('\n'), value => { test.inputs = value === '' ? [] : value.split('\n'); });
         field('Salida esperada', test.expected, value => { test.expected = value; });
+        if (test.checks) { field('Contrato de funciones (JSON)', JSON.stringify(test.checks, null, 2), value => { try { const checks = JSON.parse(value); normalizeEvaluation({ preview: false, cases: [{ ...test, checks }] }); test.checks = checks; } catch (error) { notice('Contrato inválido: ' + error.message, true); } }); box.append(el('p', 'muted', 'Las llamadas verifican retornos y listas. El programa principal se omite en estos casos. Solo se guardan cambios de contrato JSON válidos.')); }
         field('Textos que no deben aparecer (uno por línea)', test.absent?.join('\n') || '', value => { test.absent = value.split('\n').filter(Boolean); });
         box.append(select([['exact', 'Salida completa'], ['lines', 'Líneas esperadas en orden (admite otras líneas)']], test.match, `Comparación · caso ${index + 1}`, value => { test.match = value; onChange(); }, readonly), button('Eliminar caso ' + (index + 1), () => { config.cases.splice(index, 1); changed(); }, config.cases.length <= 1)); settings.append(box);
       });
@@ -162,7 +163,7 @@ export function createWorksheet(root, options) {
       if (config.previewProgram) { const consoleRoot = el('div', 'interactive-preview'); demo.append(consoleRoot); mountInteractivePreview(consoleRoot, { state, request: options.preview, exerciseId: exercise.id, program: config.previewProgram }); }
       const examples = el('details', 'preview-examples'); examples.append(el('summary', '', 'Ejemplos de prueba'), el('p', 'muted', 'Entradas y salidas de los casos preparados por el profesor, sin código de solución.'));
       const view = el('div');
-      const show = index => { const test = config.cases[index]; view.replaceChildren(el('h4', '', 'Entradas del usuario'), el('pre', '', test.inputs.map((value, index) => `${index + 1}. > ${value}`).join('\n') || '(no se solicitan datos)'), el('h4', '', 'Salida esperada'), el('pre', '', test.expected)); };
+      const show = index => { const test = config.cases[index]; view.replaceChildren(el('h4', '', 'Entradas del usuario'), el('pre', '', test.inputs.map((value, index) => `${index + 1}. > ${value}`).join('\n') || '(no se solicitan datos)'), el('h4', '', 'Salida esperada'), el('pre', '', test.expected || '(se comprueban retornos y estado; no se exige salida de consola)')); if (test.checks) view.append(el('h4', '', 'Datos, llamadas y resultados esperados de funciones'), el('pre', '', JSON.stringify(test.checks, null, 2)), el('p', 'muted', 'ref identifica una lista de los datos de prueba; expected es el retorno esperado; after es el estado posterior; silent exige no leer ni imprimir; unchanged exige conservar los datos. No es código de solución.')); };
       examples.append(select(config.cases.map((test, index) => [String(index), test.title]), '0', 'Ejemplo de funcionamiento', value => show(Number(value))), view); show(0); demo.append(examples); panel.append(demo);
     }
     guide.append(panel);

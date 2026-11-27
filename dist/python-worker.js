@@ -68,8 +68,8 @@ _aula_plt.show = _aula_show
 
 // Test harness only: inputs and expected output, never a reference implementation.
 const evaluationHarness = `
-def _aula_evaluate(source, filename, inputs):
-    import builtins, contextlib, io, json
+def _aula_evaluate(source, filename, inputs, checks_json='null'):
+    import builtins, contextlib, io, json, ast, copy, math
     class LimitedOutput(io.StringIO):
         def write(self, value):
             if self.tell() + len(value) > 100000:
@@ -86,11 +86,49 @@ def _aula_evaluate(source, filename, inputs):
         return value
     original_input = builtins.input
     error = ''
+    assertions = []
+    def equal(actual, expected):
+        if isinstance(expected, bool) or expected is None:
+            return type(actual) is type(expected) and actual == expected
+        if isinstance(expected, (int, float)):
+            return type(actual) in (int, float) and math.isclose(actual, expected, rel_tol=1e-9, abs_tol=1e-9)
+        if isinstance(expected, list):
+            return isinstance(actual, list) and len(actual) == len(expected) and all(equal(a,b) for a,b in zip(actual, expected))
+        return type(actual) is type(expected) and actual == expected
+    def equal_fixtures(actual, expected):
+        return set(actual) == set(expected) and all(equal(actual[key], expected[key]) for key in expected)
     try:
         builtins.input = read_input
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
             try:
-                exec(compile(source, filename, 'exec'), {'__name__': '__main__', '__file__': filename})
+                checks = json.loads(checks_json)
+                scope = {'__name__': '__main__', '__file__': filename}
+                if checks:
+                    tree = ast.parse(source, filename)
+                    definitions = [node for node in tree.body if isinstance(node, ast.FunctionDef)]
+                    exec(compile(ast.Module(body=definitions, type_ignores=[]), filename, 'exec'), scope)
+                    fixtures = checks['fixtures']
+                    def argument(value):
+                        return fixtures[value['ref']] if isinstance(value, dict) and set(value) == {'ref'} else value
+                    for number, call in enumerate(checks['calls'], 1):
+                        name = call['name']
+                        if name not in scope or not callable(scope[name]):
+                            raise AssertionError('Falta la función ' + name)
+                        before = copy.deepcopy(fixtures)
+                        start_output, start_input = output.tell(), position
+                        result = scope[name](*[argument(value) for value in call['args']], **{key:argument(value) for key,value in call.get('kwargs', {}).items()})
+                        if not equal(result, call['expected']):
+                            raise AssertionError(name + ': retorno incorrecto; esperado ' + repr(call['expected']) + ', recibido ' + repr(result)[:1000])
+                        if call.get('silent') and (output.tell() != start_output or position != start_input):
+                            raise AssertionError(name + ': debe funcionar sin input() ni print()')
+                        if call.get('unchanged') and not equal_fixtures(fixtures, before):
+                            raise AssertionError(name + ': modificó datos que debía conservar')
+                        for key,value in call.get('after', {}).items():
+                            if not equal(fixtures[key], value):
+                                raise AssertionError(name + ': contenido incorrecto en ' + key)
+                        assertions.append(str(number) + '. ' + name + ': contrato correcto')
+                else:
+                    exec(compile(source, filename, 'exec'), scope)
             except SystemExit as stop:
                 if stop.code not in (None, 0):
                     error = 'SystemExit: ' + str(stop.code)
@@ -98,17 +136,19 @@ def _aula_evaluate(source, filename, inputs):
                 error = type(failure).__name__ + ': ' + str(failure)
     finally:
         builtins.input = original_input
-    return json.dumps({'output': output.getvalue(), 'error': error or errors.getvalue(), 'consumed': position})
+    return json.dumps({'output': output.getvalue(), 'error': error or errors.getvalue(), 'consumed': position, 'assertions': assertions})
 `;
 function checkEvaluation(test, result) {
   const lines = value => value.replaceAll('\r', '').split('\n').map(line => line.trim().replace(/[ \t]+/g, ' ')).filter(Boolean);
   const expected = lines(test.expected), actual = lines(result.output);
   let matches;
-  if (test.match === 'exact') matches = JSON.stringify(expected) === JSON.stringify(actual);
+  if (test.checks && !test.expected.trim()) matches = true;
+  else if (test.match === 'exact') matches = JSON.stringify(expected) === JSON.stringify(actual);
   else { let cursor = 0; for (const line of actual) if (line === expected[cursor]) cursor++; matches = cursor === expected.length; }
   const forbidden = (test.absent || []).find(value => result.output.toLocaleLowerCase().includes(value.toLocaleLowerCase()));
+  if (test.checks && result.assertions?.length !== test.checks.calls.length && !result.error) result.error = 'No se completaron todas las llamadas del contrato.';
   const passed = !result.error && result.consumed === test.inputs.length && matches && !forbidden;
-  return { ...result, output: result.output.slice(0, 20000), passed, message: result.error ? 'El programa terminó con un error.' : result.consumed !== test.inputs.length ? `Se usaron ${result.consumed} de ${test.inputs.length} entradas previstas.` : forbidden ? `No debe aparecer: ${forbidden}` : !matches ? 'La salida no coincide con las líneas esperadas. Compara con la vista previa.' : 'Entradas y salida correctas.' };
+  return { ...result, output: (result.output + (result.assertions?.length ? '\n' + result.assertions.join('\n') : '')).slice(0, 20000), passed, message: result.error ? 'El programa terminó con un error o incumplió el contrato de una función.' : result.consumed !== test.inputs.length ? `Se usaron ${result.consumed} de ${test.inputs.length} entradas previstas.` : forbidden ? `No debe aparecer: ${forbidden}` : !matches ? 'La salida no coincide con las líneas esperadas. Compara con la vista previa.' : test.checks ? 'Funciones, retornos y estado correctos para este caso.' : 'Entradas y salida correctas.' };
 }
 
 async function execute(data) {
@@ -147,7 +187,7 @@ _importlib.invalidate_caches()
         if (!Array.isArray(data.test.inputs) || data.test.inputs.length > 300 || typeof data.test.expected !== 'string') throw new Error('Caso de prueba inválido.');
         py.runPython(evaluationHarness, { globals: temporary });
         const evaluate = temporary.get('_aula_evaluate'), inputs = py.toPy(data.test.inputs);
-        try { send('evaluation', { result: checkEvaluation(data.test, JSON.parse(evaluate(data.files[data.entry], `${path}/${data.entry}`, inputs))) }); }
+        try { send('evaluation', { result: checkEvaluation(data.test, JSON.parse(evaluate(data.files[data.entry], `${path}/${data.entry}`, inputs, JSON.stringify(data.test.checks || null)))) }); }
         finally { evaluate.destroy(); inputs.destroy(); }
       } else py.runPython(data.files[data.entry], { globals: temporary, filename: data.entry });
     } else {

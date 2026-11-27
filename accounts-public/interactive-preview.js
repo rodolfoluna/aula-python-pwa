@@ -1,6 +1,8 @@
 // Console UI only. The compiled runtime remains separate from project files.
+const topic45Labels=['Informar','Identificar solicitud','Decidir','Repetir con validación','Registrar en listas','Función sin parámetros','Parámetros y retorno','Valores predeterminados','Funciones de captura','Laboratorio de registro','Laboratorio de consultas','Menú completo'];
 export const previewChoices = [
  ['','Solo ejemplos de prueba'],
+ ...['laundry','tool-loans'].flatMap(domain=>topic45Labels.map((label,index)=>[`${domain}-${index+1}`,`${domain==='laundry'?'Lavandería':'Herramientas'} · ${index+1}. ${label}`])),
  ...['Guía de categorías','Ficha de gasto','Comparar compra y presupuesto','Validar presupuesto e importe','Acumular gastos del día','Consultar historial','Analizar gastos','Menú de control de gastos'].map((label,index)=>[`family-budget-${index+1}`,`Tema 3 · ${index+1}. ${label}`])
 ];
 export function mountInteractivePreview(root,{state,request,exerciseId,program}) {

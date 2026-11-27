@@ -14,7 +14,7 @@ const deadlineFor = (assignment, sub) => assignment.individual_due_at || (sub?.r
 export function setupActivities({ api, perform, getGroups, getProfile, getRunnerOrigin, beforeOpen = async () => {} }) {
   const progressBudget = new PollBudget(), progressTokens = new Map(), progressFlights = new Map();
   let sessionKey, profile, view = 'roster', catalog = { activities: [], assignments: [] }, draft, draftDirty = false, reviewDirty = false, worksheet, sync, opened, progressId, reviewedStudent, ticker, frame, runnerReady, runnerBusy, queued, runnerTimer, cacheKey, epoch = 0;
-  let evaluationReady = false;
+  let evaluationReady = false, functionEvaluationReady = false;
   let freeMode = false, freeAnswer, freeCacheFailed = false, freeUnsaved = false;
   const notice = (text, error = false) => { $('#activities-notice').textContent = text; $('#activities-notice').hidden = !text; $('#activities-notice').className = error ? 'error' : ''; };
   const navigation = createNavigation({ window, canLeave: () => !document.querySelector('#logout:disabled') && canLeave(), onError: error => notice(error.message, true) });
@@ -59,7 +59,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   function startRunner(student, kind) {
     $('#activity-workspace').dataset.kind = kind;
     $('#execution-area').hidden = kind === 'notebook';
-    frame?.remove(); clearTimeout(runnerTimer); runnerReady = false; evaluationReady = false; runnerBusy = false; queued = null;
+    frame?.remove(); clearTimeout(runnerTimer); runnerReady = false; evaluationReady = false; functionEvaluationReady = false; runnerBusy = false; queued = null;
     frame = document.createElement('iframe'); frame.title = 'Consola de Python aislada'; frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms'); frame.setAttribute('allow', 'cross-origin-isolated');
     frame.src = getRunnerOrigin() + '/runner.html?parent=' + encodeURIComponent(location.origin);
     $('#runner-host').replaceChildren(frame); $('#runner-state').textContent = 'Iniciando consola aislada…';
@@ -70,6 +70,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
     if (!items.length || runnerBusy) return false;
     if (!runnerReady) { notice(runnerUnavailable(), true); return false; }
     if (items.some(item => item.evaluation) && !evaluationReady) { notice('La consola necesita actualizarse para autoevaluar. Vuelve a abrir la actividad con conexión. Tus archivos se conservan.', true); return false; }
+    if (items.some(item => item.payload?.test?.checks) && !functionEvaluationReady) { notice('La consola necesita actualizarse para comprobar funciones. Abre de nuevo la actividad con conexión antes de preparar offline. Tus archivos se conservan.', true); return false; }
     runnerBusy = true; $('#runner-state').textContent = 'Ejecutando Python…'; syncControls(); frame.contentWindow.postMessage({ type: 'aula-run', items }, getRunnerOrigin()); return true;
   }
   function runnerCommand(type, data = {}) { if (frame && runnerReady) frame.contentWindow.postMessage({ type, ...data }, getRunnerOrigin()); }
@@ -102,7 +103,7 @@ export function setupActivities({ api, perform, getGroups, getProfile, getRunner
   window.addEventListener('message', event => {
     if (!frame || event.source !== frame.contentWindow || event.origin !== getRunnerOrigin()) return;
     if (event.data?.type === 'aula-ready') {
-      runnerReady = true; evaluationReady = event.data.evaluation === 1; clearTimeout(runnerTimer); $('#runner-state').textContent = 'Consola lista';
+      runnerReady = true; evaluationReady = event.data.evaluation === 1; functionEvaluationReady = event.data.functionEvaluation === 1; clearTimeout(runnerTimer); $('#runner-state').textContent = 'Consola lista';
       if ($('#activity-workspace').dataset.kind === 'notebook' && event.data.protocol !== 2) {
         $('#execution-area').hidden = false;
         $('#execution-area').dataset.legacy = 'true';

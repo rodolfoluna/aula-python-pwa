@@ -29,11 +29,11 @@ export function createLocalPreviewClient({load=ensurePreviewRuntime}={}) {
   clear(){generation++;sessions.clear();},
   async request(action,data){
    if(action==='start'){
-    if(typeof data.program!=='string'||!/^family-budget-[1-8]$/.test(data.program))throw new Error('Este ejercicio no tiene una simulación WebAssembly configurada.');
+    if(typeof data.program!=='string'||!/^(family-budget-[1-8]|(?:laundry|tool-loans)-(?:[1-9]|1[0-2]))$/.test(data.program))throw new Error('Este ejercicio no tiene una simulación WebAssembly configurada.');
     const current=generation,module=await load();if(current!==generation)throw new Error('La actividad cambió. Inicia otra demostración.');
     const instance=await WebAssembly.instantiate(module,{env:{abort(){throw new Error('La demostración alcanzó su límite de memoria. Puedes reiniciarla.');}}});
     if(current!==generation)throw new Error('La actividad cambió. Inicia otra demostración.');
-    const wasm=instance.exports;wasm.init(Number(data.program.at(-1)));
+    const wasm=instance.exports;const id=Number(data.program.split('-').at(-1));wasm.init(data.program.startsWith('laundry-')?100+id:data.program.startsWith('tool-loans-')?200+id:id);
     const token=crypto.randomUUID(),result={token,sequence:0,...read(wasm)};
     if(sessions.size>=8)sessions.delete(sessions.keys().next().value);
     sessions.set(token,{wasm,sequence:0,result,steps:0,bytes:result.output.length});return result;
